@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -56,6 +56,14 @@ describe('migraciones inmutables', () => {
     const dir = mkdtempSync(join(tmpdir(), 'eva-mig-'));
     writeFileSync(join(dir, '0001_extensions_and_helpers.sql'), '-- contenido distinto\nselect 1;\n');
     await expect(migrate(process.env.TEST_DATABASE_URL!, dir)).rejects.toThrow(/MIGRATION_MODIFIED/);
+  });
+  it('un cambio de saltos de línea (LF↔CRLF) no cuenta como modificación', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eva-mig-eol-'));
+    const original = readFileSync(join(process.cwd(), 'migrations', '0001_extensions_and_helpers.sql'), 'utf8').replace(/\r\n/g, '\n');
+    writeFileSync(join(dir, '0001_extensions_and_helpers.sql'), original.replace(/\n/g, '\r\n'));
+    const r = await migrate(process.env.TEST_DATABASE_URL!, dir);
+    expect(r.applied).toEqual([]);
+    expect(r.skipped).toEqual(['0001_extensions_and_helpers.sql']);
   });
   it('volver a ejecutar sin cambios no aplica nada', async () => {
     const r = await migrate(process.env.TEST_DATABASE_URL!);

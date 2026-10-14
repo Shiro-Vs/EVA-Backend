@@ -11,7 +11,8 @@ export interface MigrationResult {
   skipped: string[];
 }
 
-const checksum = (sql: string) => createHash('sha256').update(sql).digest('hex');
+// Se normalizan los saltos de línea: Git puede convertir LF↔CRLF entre Windows y Linux (CI) y el hash no debe cambiar.
+const checksum = (sql: string) => createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
 
 /** Aplica en orden las migraciones pendientes. Una migración ya aplicada es inmutable. */
 export async function migrate(connectionString: string, dir = MIGRATIONS_DIR): Promise<MigrationResult> {
