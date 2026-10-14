@@ -1,0 +1,38 @@
+{
+  "name": "eva-backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API de EVA (suscripciones compartidas y finanzas personales)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/main.ts",
+    "start": "tsx --env-file=.env src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:init": "node scripts/pg.mjs init",
+    "db:start": "node scripts/pg.mjs start",
+    "db:stop": "node scripts/pg.mjs stop",
+    "db:status": "node scripts/pg.mjs status",
+    "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
+    "db:reset:dev": "tsx --env-file=.env src/db/reset.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.12.7",
+    "jose": "^6.2.12",
+    "kysely": "^0.29.6",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
