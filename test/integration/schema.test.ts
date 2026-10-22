@@ -277,7 +277,7 @@ describe('Aplicaciones y cobros (M10, A06, A07, A09)', () => {
 
       const bal = (await c.query(`select balance from v_account_balance where account_id = $1`, [acc])).rows[0];
       expect(bal.balance).toBe('220.00'); // 200 + 10 + 10
-      const ops = (await c.query(`select count(*)::int as n from financial_operation where kind = 'income'`)).rows[0];
+      const ops = (await c.query(`select count(*)::int as n from financial_operation where kind = 'income' and owner_id = $1`, [u])).rows[0];
       expect(ops.n).toBe(2); // las aplicaciones no crean ingresos
     }));
 

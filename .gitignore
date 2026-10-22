@@ -6,3 +6,4 @@ dist/
 .pgdata/
 *.log
 coverage/
+.devuser.json

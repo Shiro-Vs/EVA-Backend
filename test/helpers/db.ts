@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { loadEnv } from '../../src/config/env.js';
 
 export const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL, max: 4 });
 
@@ -157,3 +158,7 @@ export async function allocate(c: pg.PoolClient, owner: string, receipt: string,
     [owner, receipt, obligation, amount],
   );
 }
+
+export const DEV_SECRET = 'test-secret-test-secret-test-secret-123';
+export const testEnv = () =>
+  loadEnv({ DATABASE_URL: process.env.TEST_DATABASE_URL, AUTH_MODE: 'dev', AUTH_DEV_SECRET: DEV_SECRET, LOG_LEVEL: 'silent' });

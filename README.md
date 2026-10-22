@@ -3,8 +3,8 @@
 API de EVA: suscripciones compartidas y finanzas personales. Especificación completa en
 [`../docs/especificacion/`](../docs/especificacion/00-README.md) (fuente de verdad).
 
-**Estado:** Entrega 0 (diseño técnico). Existen el esquema SQL aplicado y verificado, la configuración, el CI y la API mínima
-(`/healthz`, `/readyz`). La lógica de negocio empieza en la Entrega 1.
+**Estado:** Entrega 1 (backend) implementada y probada: cuentas, contactos, servicios con calendario, plazas con prorrateo, cargos,
+pago al proveedor, cobros con reparto, anticipos/reservas y estado de cuenta. Falta la integración con la app móvil.
 
 ## Requisitos
 
@@ -22,6 +22,7 @@ npm run db:init             # crea el clúster local y las bases eva_dev y eva_t
 npm run db:migrate          # aplica las migraciones a eva_dev
 npm test                    # reconstruye eva_test desde cero y ejecuta las pruebas
 npm run dev                 # API en http://localhost:3000
+npm run dev:token           # emite un token de DESARROLLO (usuario estable) para llamar a la API sin Supabase
 ```
 
 | Comando | Qué hace |
@@ -31,20 +32,24 @@ npm run dev                 # API en http://localhost:3000
 | `npm run db:reset:dev` | Borra y reconstruye **solo** `eva_dev` |
 | `npm test` | Vitest contra PostgreSQL real (sin simular la base) |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run openapi` | Regenera `openapi.json` (una prueba falla si cambia la API y no se regenera) |
+| `npm run dev:token` | Token de desarrollo con usuario estable (`.devuser.json`, ignorado por git); `--new` crea otro usuario |
 
 ## Estructura
 
 ```
 migrations/    SQL numerado e inmutable (fuente de verdad del esquema). Generado desde docs/especificacion/12
 src/config/    variables de entorno validadas al arrancar
-src/db/        ejecutor de migraciones, Kysely (prueba de concepto T-03)
+src/domain/    motor de cálculo PURO (dinero en céntimos, calendario, prorrateo, reparto, costos)
+src/application/ casos de uso: transacciones, bloqueos, auditoría
+src/infra/     autenticación, idempotencia, tokens de vista previa, acceso a datos
+src/db/        ejecutor de migraciones, Kysely
 src/http/      Fastify: formato de error uniforme, X-Request-Id, health
 test/          integración con PostgreSQL real y pruebas unitarias
 archive/       schema.prisma.old (borrador anterior, solo referencia; no se ejecuta)
 scripts/pg.mjs clúster PostgreSQL local del proyecto
 ```
 
-`src/domain` (motor de cálculo puro) y `src/application` (casos de uso) llegan con la Entrega 1.
 
 ## Versiones fijadas (Entrega 0, 14-oct-2026)
 

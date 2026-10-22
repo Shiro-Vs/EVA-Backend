@@ -16,6 +16,8 @@
     "db:init": "node scripts/pg.mjs init",
     "db:start": "node scripts/pg.mjs start",
     "db:stop": "node scripts/pg.mjs stop",
+    "openapi": "tsx src/http/openapi-cli.ts",
+    "dev:token": "tsx --env-file=.env scripts/dev-token.ts",
     "db:status": "node scripts/pg.mjs status",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
     "db:reset:dev": "tsx --env-file=.env src/db/reset.ts"

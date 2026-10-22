@@ -4,7 +4,7 @@ import { buildApp } from './http/app.js';
 
 const env = loadEnv();
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
-const app = buildApp({ pool, logLevel: env.LOG_LEVEL });
+const app = buildApp({ pool, env });
 
 const shutdown = async () => {
   await app.close();

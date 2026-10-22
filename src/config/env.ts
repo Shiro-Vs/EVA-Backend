@@ -10,10 +10,21 @@ const schema = z
     AUTH_DEV_SECRET: z.string().optional(),
     AUTH_JWKS_URL: z.string().optional(),
     AUTH_ISSUER: z.string().optional(),
+    PREVIEW_SECRET: z.string().min(32).optional(),
+    // Orígenes permitidos para clientes web (separados por coma). Vacío = sin CORS (la app móvil nativa no lo necesita).
+    CORS_ORIGINS: z.string().optional(),
+    // Solo AUTH_MODE=dev: habilita POST /dev/login, que entrega un token del usuario de desarrollo indicado (sin Supabase).
+    DEV_LOGIN_USER_ID: z.uuid().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.AUTH_MODE === 'dev' && (v.AUTH_DEV_SECRET?.length ?? 0) < 32) {
       ctx.addIssue({ code: 'custom', path: ['AUTH_DEV_SECRET'], message: 'AUTH_MODE=dev exige AUTH_DEV_SECRET de al menos 32 caracteres' });
+    }
+    if (v.AUTH_MODE === 'jwks' && v.DEV_LOGIN_USER_ID) {
+      ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN_USER_ID'], message: 'DEV_LOGIN_USER_ID solo es válido con AUTH_MODE=dev' });
+    }
+    if (v.AUTH_MODE === 'jwks' && !v.PREVIEW_SECRET) {
+      ctx.addIssue({ code: 'custom', path: ['PREVIEW_SECRET'], message: 'AUTH_MODE=jwks exige PREVIEW_SECRET (mínimo 32 caracteres)' });
     }
     if (v.AUTH_MODE === 'jwks' && (!v.AUTH_JWKS_URL || !v.AUTH_ISSUER)) {
       ctx.addIssue({ code: 'custom', path: ['AUTH_JWKS_URL'], message: 'AUTH_MODE=jwks exige AUTH_JWKS_URL y AUTH_ISSUER' });
@@ -24,7 +35,9 @@ export type Env = z.infer<typeof schema>;
 
 /** Valida el entorno al arrancar. Si falta algo, el proceso no inicia (09 §3). */
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
-  const parsed = schema.safeParse(source);
+  // Una variable vacía (p. ej. `PREVIEW_SECRET=` copiada de .env.example) equivale a no definida.
+  const clean = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ''));
+  const parsed = schema.safeParse(clean);
   if (!parsed.success) {
     const detail = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Configuración inválida:\n${detail}`);
