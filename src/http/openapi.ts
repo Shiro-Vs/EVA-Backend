@@ -76,6 +76,11 @@ export const ROUTES: Doc[] = [
   D('get', '/loans', 'Préstamos', 'Préstamos otorgados (por conversión de deuda), con sus componentes'),
   D('get', '/loans/{id}', 'Préstamos', 'Detalle de un préstamo con origen y saldo de cada componente'),
 
+  D('post', '/subscriptions/{id}/switch-to-individual/preview', 'Servicios', 'Vista previa del cambio a individual: bajas, devoluciones y préstamos de cada plaza', { body: s.exitPreviewBody }),
+  D('post', '/subscriptions/{id}/switch-to-individual', 'Servicios', 'Cambia a individual al final del ciclo en curso (RN-X08), en una sola transacción', { body: s.exitCreate, idempotent: true }),
+  D('post', '/contacts/{id}/debt-conversion/preview', 'Préstamos', 'Vista previa de convertir deuda de servicio en un préstamo', { body: s.debtConversionPreview }),
+  D('post', '/contacts/{id}/debt-conversion', 'Préstamos', 'Convierte deuda de servicio en un préstamo con detalle (la deuda total no cambia)', { body: s.debtConversionCreate, idempotent: true, status: 201 }),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),

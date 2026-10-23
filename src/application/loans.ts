@@ -4,6 +4,7 @@ import { formatMoney, parseMoney } from '../domain/money.js';
 import { notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
+import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
 import { ts, type Ctx } from './context.js';
 
 export type ConversionTrigger = 'exit' | 'individual_switch' | 'courtesy_choice' | 'manual';
@@ -100,6 +101,50 @@ export async function listLoans(ctx: Ctx, contactId?: string) {
   return out;
 }
 
-export function assertConvertible(pending: bigint) {
-  if (pending <= 0n) throw unprocessable('NOTHING_TO_CONVERT', 'There is no pending debt to convert');
+interface ManualRow { obligation_id: string; pending: string; contact_id: string; is_charge: boolean; seat_label: string | null; subscription_name: string | null; start_date: string | null; end_date: string | null }
+
+async function manualPlan(ctx: Ctx, contactId: string, obligationIds: string[]) {
+  const c = await one<{ name: string }>(ctx.trx, sql<{ name: string }>`select name from contact where owner_id = ${ctx.ownerId} and id = ${contactId}`);
+  if (!c) throw notFound('Contact');
+  const ids = [...new Set(obligationIds)].sort();
+  const locked = await rows<{ id: string }>(ctx.trx, sql<{ id: string }>`select id from receivable_obligation where owner_id = ${ctx.ownerId} and id = any(${ids}::uuid[]) order by id for update`);
+  if (locked.length !== ids.length) throw notFound('Obligation');
+  const src = await rows<ManualRow>(ctx.trx, sql<ManualRow>`
+    select b.obligation_id, b.pending_amount as pending, b.contact_id, (mc.obligation_id is not null) as is_charge,
+           s.label as seat_label, sub.name as subscription_name, cy.start_date, cy.end_date
+    from v_obligation_balance b
+    left join member_charge mc on mc.obligation_id = b.obligation_id
+    left join seat s on s.id = mc.seat_id and s.owner_id = mc.owner_id
+    left join billing_cycle cy on cy.id = mc.cycle_id and cy.owner_id = mc.owner_id
+    left join subscription sub on sub.id = cy.subscription_id and sub.owner_id = cy.owner_id
+    where b.owner_id = ${ctx.ownerId} and b.obligation_id = any(${ids}::uuid[]) order by cy.start_date, b.obligation_id`);
+  if (src.length !== ids.length) throw unprocessable('NOT_CONVERTIBLE', 'One of the items is cancelled and cannot be converted');
+  if (src.some((r) => r.contact_id !== contactId)) throw unprocessable('OBLIGATION_CONTACT_MISMATCH', 'One of the items belongs to another contact');
+  if (src.some((r) => !r.is_charge)) throw unprocessable('NOT_CONVERTIBLE', 'A loan component cannot be converted again');
+  const payable = src.filter((r) => parseMoney(r.pending) > 0n);
+  if (payable.length === 0) throw unprocessable('NOTHING_TO_CONVERT', 'There is no pending debt to convert');
+  return { contactName: c.name, ids: payable.map((r) => r.obligation_id), rows: payable, total: payable.reduce((a, r) => a + parseMoney(r.pending), 0n) };
+}
+
+const manualInputs = (contactId: string, ids: string[]) => ({ contactId, ids: [...new Set(ids)].sort() });
+
+/** Vista previa de la conversión manual de deuda a préstamo (RN-X07): no cambia la deuda total del contacto. */
+export async function previewDebtConversion(ctx: Ctx, contactId: string, obligationIds: string[]) {
+  const p = await manualPlan(ctx, contactId, obligationIds);
+  return {
+    contact: { id: contactId, name: p.contactName },
+    total: formatMoney(p.total),
+    totalDebtBefore: formatMoney(p.total),
+    totalDebtAfter: formatMoney(p.total), // la deuda no cambia: pasa de cargos a componentes de préstamo
+    components: p.rows.map((r) => ({
+      obligationId: r.obligation_id, concept: `${r.subscription_name} — ${r.seat_label}`, periodLabel: `ciclo ${r.start_date} → ${r.end_date}`, amount: formatMoney(parseMoney(r.pending)),
+    })),
+    previewToken: makePreviewToken(ctx.previewSecret, { scope: 'debt.convert', ownerId: ctx.ownerId, inputs: manualInputs(contactId, obligationIds), state: p.rows.map((r) => [r.obligation_id, r.pending]) }, ctx.nowMs),
+  };
+}
+
+export async function applyDebtConversion(ctx: Ctx, contactId: string, i: { obligationIds: string[]; reason: string; previewToken: string }) {
+  const p = await manualPlan(ctx, contactId, i.obligationIds);
+  checkPreviewToken(ctx.previewSecret, i.previewToken, { scope: 'debt.convert', ownerId: ctx.ownerId, inputs: manualInputs(contactId, i.obligationIds), state: p.rows.map((r) => [r.obligation_id, r.pending]) }, ctx.nowMs);
+  return convertDebtToLoan(ctx, { contactId, obligationIds: p.ids, trigger: 'manual', reason: i.reason.trim() });
 }

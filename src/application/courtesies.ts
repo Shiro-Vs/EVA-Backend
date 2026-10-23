@@ -6,6 +6,7 @@ import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { ts, type Ctx } from './context.js';
 import { consumeCourtesy } from './courtesy-core.js';
+import { convertDebtToLoan } from './loans.js';
 import { syncSubscription } from './sync.js';
 
 export interface CourtesyInput {
@@ -13,6 +14,8 @@ export interface CourtesyInput {
   cycles?: number;
   untilDate?: string;
   reason: string;
+  /** Con deuda anterior hay que elegir: mantenerla en el servicio o convertirla en préstamo (RN-K04). */
+  debtHandling?: 'keep' | 'convert';
 }
 
 interface SeatInfo { id: string; label: string; subscription_id: string; is_owner: boolean; end_date: string | null; contact_id: string | null; contact_name: string | null }
@@ -93,7 +96,8 @@ export async function previewCourtesy(ctx: Ctx, seatId: string, input: CourtesyI
     startsOn: p.startsOn,
     waivedCharges: p.covered.map((c) => ({ obligationId: c.obligation_id, cycle: { id: c.cycle_id, seq: c.seq, start: c.start_date, end: c.end_date }, waived: formatMoney(parseMoney(c.quota)) })),
     existingDebt: formatMoney(p.existingDebt),
-    debtPolicy: 'keep' as const,
+    debtChoiceRequired: p.existingDebt > 0n,
+    debtOptions: p.existingDebt > 0n ? (['keep', 'convert'] as const) : [],
     rule: 'RN-K01..K05',
   };
 }
@@ -113,6 +117,9 @@ const view = (r: CourtesyDbRow, todayIso: string) => ({
 
 export async function createCourtesy(ctx: Ctx, seatId: string, input: CourtesyInput) {
   const p = await buildPlan(ctx, seatId, input);
+  if (p.existingDebt > 0n && !input.debtHandling) {
+    throw unprocessable('DEBT_HANDLING_REQUIRED', 'The person already owes money for this seat: choose to keep the debt in the service or convert it into a loan', { existingDebt: formatMoney(p.existingDebt), options: ['keep', 'convert'] });
+  }
   const c = await one<CourtesyDbRow>(ctx.trx, sql<CourtesyDbRow>`
     insert into courtesy (owner_id, seat_id, kind, starts_on, until_date, cycles_total, reason, created_by)
     values (${ctx.ownerId}, ${seatId}, ${input.kind}, ${p.startsOn}, ${input.kind === 'until_date' ? input.untilDate! : null},
@@ -126,10 +133,18 @@ export async function createCourtesy(ctx: Ctx, seatId: string, input: CourtesyIn
       where owner_id = ${ctx.ownerId} and obligation_id = ${e.obligation_id}`.execute(ctx.trx);
   }
   if (p.covered.length > 0) await consumeCourtesy(ctx, c!.id, p.covered.length);
+  let loanId: string | null = null;
+  if (input.debtHandling === 'convert' && p.existingDebt > 0n) {
+    const owed = await rows<{ obligation_id: string }>(ctx.trx, sql<{ obligation_id: string }>`
+      select b.obligation_id from member_charge mc join v_obligation_balance b on b.obligation_id = mc.obligation_id
+      where mc.owner_id = ${ctx.ownerId} and mc.seat_id = ${seatId} and mc.status = 'issued' and b.pending_amount > 0`);
+    const loan = await convertDebtToLoan(ctx, { contactId: p.seat.contact_id!, obligationIds: owed.map((x) => x.obligation_id), trigger: 'courtesy_choice', reason: `Cortesía: ${input.reason.trim()}` });
+    loanId = loan?.id ?? null;
+  }
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'courtesy.create', entityType: 'seat', entityId: seatId,
-    changes: { courtesyId: c!.id, kind: input.kind, startsOn: p.startsOn, waivedCharges: p.covered.length } });
+    changes: { courtesyId: c!.id, kind: input.kind, startsOn: p.startsOn, waivedCharges: p.covered.length, debtHandling: input.debtHandling ?? null, loanId } });
   const fresh = await one<CourtesyDbRow>(ctx.trx, sql<CourtesyDbRow>`select * from courtesy where owner_id = ${ctx.ownerId} and id = ${c!.id}`);
-  return view(fresh!, formatISO(ctx.today));
+  return { ...view(fresh!, formatISO(ctx.today)), debtHandling: input.debtHandling ?? null, loanId };
 }
 
 export async function listCourtesies(ctx: Ctx, seatId: string) {

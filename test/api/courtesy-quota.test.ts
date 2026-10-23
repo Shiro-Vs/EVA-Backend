@@ -31,14 +31,15 @@ async function world() {
   return { u, bcp, svc, ana, seat: seat.body as any };
 }
 
-const courtesy = (token: string, seatId: string, body: Record<string, unknown>) => api.post(token, `/seats/${seatId}/courtesies`, body);
+// Con deuda anterior el sistema obliga a elegir (A16); estas pruebas conservan la deuda donde está.
+const courtesy = (token: string, seatId: string, body: Record<string, unknown>) => api.post(token, `/seats/${seatId}/courtesies`, { debtHandling: 'keep', ...body });
 
 describe('Cortesías (RN-K01–K05)', () => {
   it('por 2 ciclos: rige desde el SIGUIENTE ciclo, el ciclo en curso no se toca y luego se vuelve a cobrar', async () => {
     const w = await world();
     const pv = await api.post(w.u.token, `/seats/${w.seat.id}/courtesies/preview`, { kind: 'cycles', cycles: 2, reason: 'Regalo de cumpleaños' });
     expect(pv.status, JSON.stringify(pv.body)).toBe(200);
-    expect(pv.body).toMatchObject({ startsOn: '2026-11-07', debtPolicy: 'keep', existingDebt: '20.00' });
+    expect(pv.body).toMatchObject({ startsOn: '2026-11-07', debtChoiceRequired: true, existingDebt: '20.00' });
     const r = await courtesy(w.u.token, w.seat.id, { kind: 'cycles', cycles: 2, reason: 'Regalo de cumpleaños' });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body).toMatchObject({ kind: 'cycles', cyclesTotal: 2, cyclesUsed: 0, status: 'active', startsOn: '2026-11-07' });

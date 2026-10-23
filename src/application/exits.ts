@@ -168,6 +168,12 @@ function previewJson(p: Plan, ctx: Ctx) {
   };
 }
 
+/** Plan de baja sin token: lo usan flujos que agrupan varias bajas (cambio a individual). */
+export async function exitPreviewState(ctx: Ctx, seatId: string, opts: ExitOptions) {
+  const p = await buildPlan(ctx, seatId, opts);
+  return { json: previewJson(p, ctx), fingerprint: p.fingerprint, effectiveOn: p.effectiveOn };
+}
+
 export async function previewExit(ctx: Ctx, seatId: string, opts: ExitOptions = {}) {
   const p = await buildPlan(ctx, seatId, opts);
   return { ...previewJson(p, ctx), previewToken: makePreviewToken(ctx.previewSecret, { scope: 'seat.exit', ownerId: ctx.ownerId, inputs: inputsOf(seatId, opts), state: p.fingerprint }, ctx.nowMs) };

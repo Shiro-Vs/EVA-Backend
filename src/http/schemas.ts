@@ -97,6 +97,7 @@ export const courtesyBody = z.object({
   cycles: z.number().int().min(1).max(60).optional(),
   untilDate: isoDate.optional(),
   reason: text(200),
+  debtHandling: z.enum(['keep', 'convert']).optional(),
 }).strict().superRefine((v, ctx) => {
   if (v.kind === 'cycles' && v.cycles === undefined) ctx.addIssue({ code: 'custom', path: ['cycles'], message: 'Indica cuántos ciclos' });
   if (v.kind === 'until_date' && v.untilDate === undefined) ctx.addIssue({ code: 'custom', path: ['untilDate'], message: 'Indica la fecha final' });
@@ -125,6 +126,9 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('suspend'), reason: reasonText, previewToken: z.string().min(10) }).strict(),
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
+
+export const debtConversionPreview = z.object({ obligationIds: z.array(uuid).min(1).max(100) }).strict();
+export const debtConversionCreate = debtConversionPreview.extend({ reason: text(200), previewToken: z.string().min(10) }).strict();
 
 export const exitPreviewBody = z.object({ reason: text(200).optional() }).strict();
 export const exitBody = z.object({ reason: text(200) }).strict();
