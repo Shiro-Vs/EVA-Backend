@@ -131,11 +131,15 @@ export async function createSeat(ctx: Ctx, subscriptionId: string, i: SeatInput 
 
 interface SeatRow {
   id: string; label: string; subscription_id: string; contact_id: string | null; contact_name: string | null; is_owner: boolean;
-  start_date: string; end_date: string | null; quota: string;
+  start_date: string; end_date: string | null; quota: string; next_quota: string | null; next_quota_from: string | null;
 }
-const seatBase = sql`
+const seatBase = (today: number) => sql`
   select s.id, s.label, s.subscription_id, m.contact_id, ct.name as contact_name, m.is_owner, s.start_date, s.end_date,
-    (select st.quota from seat_terms st where st.seat_id = s.id and st.owner_id = s.owner_id order by st.valid_from desc limit 1) as quota
+    coalesce(
+      (select st.quota from seat_terms st where st.seat_id = s.id and st.owner_id = s.owner_id and st.valid_from <= ${formatISO(today)}::date and (st.valid_to is null or st.valid_to > ${formatISO(today)}::date) limit 1),
+      (select st.quota from seat_terms st where st.seat_id = s.id and st.owner_id = s.owner_id order by st.valid_from limit 1)) as quota,
+    (select st.quota from seat_terms st where st.seat_id = s.id and st.owner_id = s.owner_id and st.valid_from > ${formatISO(today)}::date order by st.valid_from limit 1) as next_quota,
+    (select st.valid_from from seat_terms st where st.seat_id = s.id and st.owner_id = s.owner_id and st.valid_from > ${formatISO(today)}::date order by st.valid_from limit 1) as next_quota_from
   from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id
   left join contact ct on ct.id = m.contact_id and ct.owner_id = m.owner_id`;
 
@@ -143,13 +147,14 @@ const seatJson = (s: SeatRow) => ({
   id: s.id, label: s.label, subscriptionId: s.subscription_id, isOwner: s.is_owner,
   contact: s.contact_id ? { id: s.contact_id, name: s.contact_name } : null,
   startDate: s.start_date, endDate: s.end_date, quota: formatMoney(parseMoney(s.quota)),
+  scheduledQuota: s.next_quota ? { quota: formatMoney(parseMoney(s.next_quota)), from: s.next_quota_from } : null,
 });
 
 export async function getSeat(ctx: Ctx, id: string) {
   const found = await one<{ subscription_id: string }>(ctx.trx, sql<{ subscription_id: string }>`select subscription_id from seat where owner_id = ${ctx.ownerId} and id = ${id}`);
   if (!found) throw notFound('Seat');
   await syncSubscription(ctx, found.subscription_id);
-  const s = await one<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase} where s.owner_id = ${ctx.ownerId} and s.id = ${id}`);
+  const s = await one<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase(ctx.today)} where s.owner_id = ${ctx.ownerId} and s.id = ${id}`);
   if (!s) throw notFound('Seat');
   return { ...seatJson(s), charges: await listCharges(ctx, sql`mc.seat_id = ${id}`) };
 }
@@ -157,7 +162,7 @@ export async function getSeat(ctx: Ctx, id: string) {
 export async function listSeats(ctx: Ctx, subscriptionId: string) {
   await ensureSubscription(ctx, subscriptionId);
   await syncSubscription(ctx, subscriptionId);
-  const seats = await rows<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase} where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${subscriptionId} and s.end_date is null order by s.created_at`);
+  const seats = await rows<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase(ctx.today)} where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${subscriptionId} and s.end_date is null order by s.created_at`);
   const out = [];
   for (const s of seats) {
     const charges = s.is_owner ? [] : await listCharges(ctx, sql`mc.seat_id = ${s.id}`);

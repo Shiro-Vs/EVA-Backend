@@ -5,6 +5,7 @@ import { formatMoney, parseMoney } from '../domain/money.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import type { Ctx } from './context.js';
+import { consumeCourtesy, coveringCourtesy } from './courtesy-core.js';
 
 const m = (v: string) => formatMoney(parseMoney(v, { allowNegative: true }));
 
@@ -81,11 +82,14 @@ export async function emitCharges(ctx: Ctx, subscriptionId: string): Promise<num
 
   for (const t of todo) {
     const quota = parseMoney(t.quota);
+    // Cortesía (RN-K02): el cargo se emite completo con exención igual al bruto; nunca queda neto negativo (RN-K05).
+    const courtesy = await coveringCourtesy(ctx, t.seat_id, t.start_date);
     const obligationId = await insertCharge(ctx, {
       contactId: t.contact_id, seatId: t.seat_id, cycleId: t.cycle_id, dueDate: parseISO(t.start_date),
-      quota, gross: quota, exemption: 0n, mode: 'full_cycle',
-      snapshot: { mode: 'full_cycle', quota: formatMoney(quota), rule: 'RN-CH02@v1', cycle: { start: t.start_date, end: t.end_date } },
+      quota, gross: quota, exemption: courtesy ? quota : 0n, mode: courtesy ? 'courtesy' : 'full_cycle',
+      snapshot: { mode: courtesy ? 'courtesy' : 'full_cycle', quota: formatMoney(quota), rule: 'RN-CH02@v1', cycle: { start: t.start_date, end: t.end_date }, ...(courtesy ? { courtesyId: courtesy.id } : {}) },
     });
+    if (courtesy) await consumeCourtesy(ctx, courtesy.id);
     await applyReservations(ctx, obligationId, t.contact_id, subscriptionId);
   }
   return todo.length;
@@ -117,11 +121,12 @@ export const chargeView = (r: ChargeRow, todayIso: string) => {
 
 const chargeBase = sql`
   select b.obligation_id, s.id as seat_id, s.label as seat_label, mc.contact_id, ct.name as contact_name,
-         c.id as cycle_id, c.start_date as cycle_start, c.end_date as cycle_end, mc.due_date, mc.mode, mc.calc_snapshot,
+         c.id as cycle_id, c.start_date as cycle_start, c.end_date as cycle_end, d.effective_due_date as due_date, mc.mode, mc.calc_snapshot,
          b.issued_amount, mc.gross_amount, mc.exemption_amount, b.adjustments_total, b.applied_total, b.converted_total, b.pending_amount,
          sub.id as subscription_id, sub.name as subscription_name
   from v_obligation_balance b
   join member_charge mc on mc.obligation_id = b.obligation_id
+  join v_charge_due d on d.obligation_id = b.obligation_id
   join seat s on s.id = mc.seat_id and s.owner_id = mc.owner_id
   join billing_cycle c on c.id = mc.cycle_id and c.owner_id = mc.owner_id
   join subscription sub on sub.id = c.subscription_id and sub.owner_id = c.owner_id

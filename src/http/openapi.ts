@@ -56,6 +56,13 @@ export const ROUTES: Doc[] = [
   D('get', '/subscriptions/{id}/seats', 'Plazas', 'Plazas activas del servicio con pendiente'),
   D('get', '/seats/{id}', 'Plazas', 'Plaza con sus cargos'),
 
+  D('post', '/seats/{id}/courtesies/preview', 'Cortesías', 'Vista previa: desde qué ciclo rige y qué cargos ya emitidos se eximen', { body: s.courtesyBody }),
+  D('post', '/seats/{id}/courtesies', 'Cortesías', 'Crea una cortesía (por ciclos, hasta una fecha o permanente) desde el siguiente ciclo', { body: s.courtesyBody, idempotent: true, status: 201 }),
+  D('get', '/seats/{id}/courtesies', 'Cortesías', 'Cortesías de la plaza'),
+  D('post', '/courtesies/{id}/end', 'Cortesías', 'Termina la cortesía; los ciclos sin emitir vuelven a cobrarse', { idempotent: true }),
+  D('post', '/seats/{id}/quota-change/preview', 'Plazas', 'Vista previa del cambio de cuota: ajustes por ciclo, vencimientos y crédito liberado', { body: s.quotaChangeBody }),
+  D('post', '/seats/{id}/quota-change', 'Plazas', 'Aplica el cambio de cuota desde el inicio de un ciclo futuro', { body: s.quotaChangeCreate, idempotent: true }),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),

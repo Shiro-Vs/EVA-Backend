@@ -26,8 +26,8 @@ const base = (today: number) => sql`
   select c.*,
     coalesce((select sum(b.pending_amount) from v_obligation_balance b where b.owner_id = c.owner_id and b.contact_id = c.id), 0.00) as pending,
     coalesce((select sum(b.pending_amount) from v_obligation_balance b
-              join member_charge mc on mc.obligation_id = b.obligation_id
-              where b.owner_id = c.owner_id and b.contact_id = c.id and mc.due_date < ${formatISO(today)}::date and b.pending_amount > 0), 0.00) as overdue,
+              join v_charge_due d on d.obligation_id = b.obligation_id
+              where b.owner_id = c.owner_id and b.contact_id = c.id and d.effective_due_date < ${formatISO(today)}::date and b.pending_amount > 0), 0.00) as overdue,
     coalesce((select sum(a.free) from v_receipt_availability a where a.owner_id = c.owner_id and a.contact_id = c.id), 0.00) as credit_free,
     coalesce((select sum(a.reserved) from v_receipt_availability a where a.owner_id = c.owner_id and a.contact_id = c.id), 0.00) as credit_reserved,
     (select count(*) from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id

@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as courtesies from '../../application/courtesies.js';
+import * as quota from '../../application/quota.js';
 import * as seats from '../../application/seats.js';
 import { parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -25,5 +27,37 @@ export function seatRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/seats/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => seats.getSeat(ctx, id));
+  });
+
+  // Cortesías (RN-K01..K05)
+  app.post('/seats/:id/courtesies/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.courtesyBody, req.body);
+    return withCtx(deps, req, (ctx) => courtesies.previewCourtesy(ctx, id, body));
+  });
+  app.post('/seats/:id/courtesies', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.courtesyBody, req.body);
+    return withIdempotency(deps, req, reply, `POST /seats/${id}/courtesies`, body, async (ctx) => ({ status: 201, body: await courtesies.createCourtesy(ctx, id, body) }));
+  });
+  app.get('/seats/:id/courtesies', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => courtesies.listCourtesies(ctx, id)) };
+  });
+  app.post('/courtesies/:id/end', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    return withIdempotency(deps, req, reply, `POST /courtesies/${id}/end`, {}, async (ctx) => ({ status: 200, body: await courtesies.endCourtesy(ctx, id) }));
+  });
+
+  // Cambio de cuota (RN-Q01..Q04)
+  app.post('/seats/:id/quota-change/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.quotaChangeBody, req.body);
+    return withCtx(deps, req, (ctx) => quota.previewQuotaChange(ctx, id, body));
+  });
+  app.post('/seats/:id/quota-change', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.quotaChangeCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /seats/${id}/quota-change`, body, async (ctx) => ({ status: 200, body: await quota.applyQuotaChange(ctx, id, body) }));
   });
 }

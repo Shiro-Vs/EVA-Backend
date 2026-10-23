@@ -22,9 +22,9 @@ export async function summary(ctx: Ctx) {
 
   const rec = await one<{ pending: string; overdue: string; debtors: string }>(ctx.trx, sql<{ pending: string; overdue: string; debtors: string }>`
     select coalesce(sum(b.pending_amount), 0.00) as pending,
-           coalesce(sum(b.pending_amount) filter (where mc.due_date < ${today}::date), 0.00) as overdue,
+           coalesce(sum(b.pending_amount) filter (where d.effective_due_date < ${today}::date), 0.00) as overdue,
            count(distinct b.contact_id) filter (where b.pending_amount > 0) as debtors
-    from v_obligation_balance b join member_charge mc on mc.obligation_id = b.obligation_id
+    from v_obligation_balance b join v_charge_due d on d.obligation_id = b.obligation_id
     where b.owner_id = ${ctx.ownerId} and b.pending_amount > 0`);
 
   const credit = await one<{ free: string; reserved: string }>(ctx.trx, sql<{ free: string; reserved: string }>`

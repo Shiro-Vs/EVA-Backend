@@ -92,6 +92,24 @@ export const seatBody = z.object({
 }).strict();
 export const seatCreate = seatBody.extend({ previewToken: z.string().min(10) }).strict();
 
+export const courtesyBody = z.object({
+  kind: z.enum(['cycles', 'until_date', 'permanent']),
+  cycles: z.number().int().min(1).max(60).optional(),
+  untilDate: isoDate.optional(),
+  reason: text(200),
+}).strict().superRefine((v, ctx) => {
+  if (v.kind === 'cycles' && v.cycles === undefined) ctx.addIssue({ code: 'custom', path: ['cycles'], message: 'Indica cuántos ciclos' });
+  if (v.kind === 'until_date' && v.untilDate === undefined) ctx.addIssue({ code: 'custom', path: ['untilDate'], message: 'Indica la fecha final' });
+});
+
+export const quotaChangeBody = z.object({
+  newQuota: money,
+  effectiveFrom: isoDate,
+  mode: z.enum(['per_renewal', 'lump']),
+  reason: text(200),
+}).strict();
+export const quotaChangeCreate = quotaChangeBody.extend({ previewToken: z.string().min(10) }).strict();
+
 export const receiptBody = z.object({
   contactId: uuid,
   accountId: uuid,
