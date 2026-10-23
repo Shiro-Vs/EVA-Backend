@@ -200,6 +200,10 @@ describe('Corregir una operación (RN-V02/V05) y campos sin efecto financiero (R
     expect((await api.get(w2.u.token, `/operations/${old.receipt.operationId}`)).body.description).toBe('Yape de Ana');
     // Cambiar el contacto de la operación de un cobro no está permitido.
     const opv = (await api.get(w2.u.token, `/operations/${old.receipt.operationId}`)).body;
+    // La operación sabe a qué registro pertenece y el contacto lista sus cobros (para llegar a corregirlos).
+    expect(opv.links).toEqual({ receiptId: old.receipt.id, supplierPaymentId: null, refundId: null });
+    const list = (await api.get(w2.u.token, `/contacts/${w2.ana.id}/receipts`)).body.items;
+    expect(list[0]).toMatchObject({ id: old.receipt.id, amount: '30.00', status: 'active', note: 'Yape de Ana', free: '0.00' });
     const other = await createContact(api, w2.u.token, 'Beto');
     expect((await api.patch(w2.u.token, `/operations/${old.receipt.operationId}`, { contactId: other.id }, opv.version)).body.error.code).toBe('OPERATION_LINKED');
   });

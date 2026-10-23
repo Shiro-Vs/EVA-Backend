@@ -88,6 +88,10 @@ export function billingRoutes(app: FastifyInstance, deps: HttpDeps) {
     const body = parse(s.receiptReverseCreate, req.body);
     return withIdempotency(deps, req, reply, `POST /receipts/${id}/reverse`, body, async (ctx) => ({ status: 200, body: await corrections.applyReceiptReversal(ctx, id, body.reason, body.previewToken) }));
   });
+  app.get('/contacts/:id/receipts', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => receipts.listContactReceipts(ctx, id)) };
+  });
   app.get('/contacts/:id/credit', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => receipts.contactCredit(ctx, id));

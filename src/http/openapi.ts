@@ -39,6 +39,7 @@ export const ROUTES: Doc[] = [
   D('patch', '/contacts/{id}', 'Contactos', 'Edita un contacto', { body: s.contactPatch, ifMatch: true }),
   D('post', '/contacts/{id}/archive', 'Contactos', 'Archiva el contacto (bloqueado con plazas activas)'),
   D('get', '/contacts/{id}/statement', 'Contactos', 'Estado de cuenta por servicio, plaza y ciclo, con texto para compartir'),
+  D('get', '/contacts/{id}/receipts', 'Cobros', 'Cobros del contacto con lo que queda disponible de cada uno'),
   D('get', '/contacts/{id}/credit', 'Cobros', 'Crédito del contacto: libre y reservado'),
 
   D('post', '/subscriptions/preview', 'Servicios', 'Vista previa: calendario, cuota sugerida y primeros ciclos', { body: s.subscriptionPreview }),

@@ -173,6 +173,20 @@ export async function getReceipt(ctx: Ctx, id: string) {
   };
 }
 
+/** Cobros de un contacto (más recientes primero), con lo que queda disponible de cada uno. */
+export async function listContactReceipts(ctx: Ctx, contactId: string) {
+  const c = await one(ctx.trx, sql`select 1 as ok from contact where owner_id = ${ctx.ownerId} and id = ${contactId}`);
+  if (!c) throw notFound('Contact');
+  const r = await rows<{ id: string; operation_id: string; amount: string; received_on: string; note: string | null; status: string; version: number; free: string | null; unapplied: string | null }>(ctx.trx, sql`
+    select r.id, r.operation_id, r.amount, r.received_on, r.note, r.status, r.version, a.free, a.unapplied
+    from receipt r left join v_receipt_availability a on a.receipt_id = r.id
+    where r.owner_id = ${ctx.ownerId} and r.contact_id = ${contactId} order by r.received_on desc, r.created_at desc, r.id`);
+  return r.map((x) => ({
+    id: x.id, operationId: x.operation_id, amount: formatMoney(parseMoney(x.amount)), receivedOn: x.received_on, note: x.note, status: x.status, version: x.version,
+    unapplied: x.unapplied === null ? null : formatMoney(parseMoney(x.unapplied)), free: x.free === null ? null : formatMoney(parseMoney(x.free)),
+  }));
+}
+
 /** Crédito del contacto separado en libre y reservado, por servicio (RN-R09). */
 export async function contactCredit(ctx: Ctx, contactId: string) {
   const c = await one(ctx.trx, sql`select 1 as ok from contact where owner_id = ${ctx.ownerId} and id = ${contactId}`);

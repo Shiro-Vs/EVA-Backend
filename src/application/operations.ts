@@ -83,7 +83,13 @@ export async function getOperation(ctx: Ctx, id: string) {
     ctx.trx, sql`select id, kind, occurred_on, description, status, reversal_of_id, reason, version, created_at from financial_operation where owner_id = ${ctx.ownerId} and id = ${id}`);
   if (!op) throw notFound('Operation');
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
+  // A qué registro pertenece (un cobro, un pago al proveedor o una devolución): esos se corrigen por su propio registro.
+  const links = await one<{ receipt_id: string | null; supplier_payment_id: string | null; refund_id: string | null }>(ctx.trx, sql`
+    select (select id from receipt where operation_id = ${id}) as receipt_id,
+           (select id from supplier_payment where operation_id = ${id}) as supplier_payment_id,
+           (select id from refund where operation_id = ${id}) as refund_id`);
   return {
+    links: { receiptId: links?.receipt_id ?? null, supplierPaymentId: links?.supplier_payment_id ?? null, refundId: links?.refund_id ?? null },
     id: op.id, kind: op.kind, occurredOn: op.occurred_on, description: op.description, status: op.status,
     reversalOfId: op.reversal_of_id, reason: op.reason, version: op.version, createdAt: ts(op.created_at),
     entries: es.map((e) => ({ accountId: e.account_id, amount: formatMoney(parseMoney(e.amount, { allowNegative: true })) })),
