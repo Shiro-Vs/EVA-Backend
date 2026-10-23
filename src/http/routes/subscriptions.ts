@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as calendar from '../../application/calendarChanges.js';
 import * as subs from '../../application/subscriptions.js';
 import { etag, ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -24,6 +25,20 @@ export function subscriptionRoutes(app: FastifyInstance, deps: HttpDeps) {
     const r = await withCtx(deps, req, (ctx) => subs.getSubscription(ctx, id));
     etag(reply, r.version);
     return r;
+  });
+  app.post('/subscriptions/:id/calendar-changes/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.calendarChangeBody, req.body);
+    return withCtx(deps, req, (ctx) => calendar.previewCalendarChange(ctx, id, body));
+  });
+  app.post('/subscriptions/:id/calendar-changes', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.calendarChangeCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /subscriptions/${id}/calendar-changes`, body, async (ctx) => ({ status: 201, body: await calendar.applyCalendarChange(ctx, id, body) }));
+  });
+  app.get('/subscriptions/:id/calendar-changes', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => calendar.listCalendarChanges(ctx, id)) };
   });
   app.patch('/subscriptions/:id', async (req, reply) => {
     const { id } = parse(idParam, req.params);

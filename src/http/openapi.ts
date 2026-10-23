@@ -63,6 +63,10 @@ export const ROUTES: Doc[] = [
   D('post', '/seats/{id}/quota-change/preview', 'Plazas', 'Vista previa del cambio de cuota: ajustes por ciclo, vencimientos y crédito liberado', { body: s.quotaChangeBody }),
   D('post', '/seats/{id}/quota-change', 'Plazas', 'Aplica el cambio de cuota desde el inicio de un ciclo futuro', { body: s.quotaChangeCreate, idempotent: true }),
 
+  D('post', '/subscriptions/{id}/calendar-changes/preview', 'Calendario', 'Vista previa de un cambio de calendario: ciclos y vencimientos afectados (los importes no cambian)', { body: s.calendarChangeBody }),
+  D('post', '/subscriptions/{id}/calendar-changes', 'Calendario', 'Desplaza o adelanta la renovación, cambia la frecuencia, suspende o reactiva', { body: s.calendarChangeCreate, idempotent: true, status: 201 }),
+  D('get', '/subscriptions/{id}/calendar-changes', 'Calendario', 'Historial de cambios de calendario'),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),

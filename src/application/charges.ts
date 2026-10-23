@@ -64,7 +64,7 @@ export async function applyReservations(ctx: Ctx, obligationId: string, contactI
  */
 export async function emitCharges(ctx: Ctx, subscriptionId: string): Promise<number> {
   const sub = await one<{ status: string }>(ctx.trx, sql<{ status: string }>`select status from subscription where owner_id = ${ctx.ownerId} and id = ${subscriptionId}`);
-  if (!sub || sub.status === 'archived') return 0;
+  if (!sub || sub.status !== 'active') return 0;
   const today = formatISO(ctx.today);
   const todo = await rows<{ seat_id: string; contact_id: string; cycle_id: string; start_date: string; end_date: string; quota: string }>(ctx.trx, sql`
     select s.id as seat_id, m.contact_id, c.id as cycle_id, c.start_date, c.end_date, st.quota

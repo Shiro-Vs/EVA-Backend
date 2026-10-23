@@ -110,6 +110,22 @@ export const quotaChangeBody = z.object({
 }).strict();
 export const quotaChangeCreate = quotaChangeBody.extend({ previewToken: z.string().min(10) }).strict();
 
+const reasonText = text(200);
+export const calendarChangeBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('shift_renewal'), newDate: isoDate, reason: reasonText }).strict(),
+  z.object({ kind: z.literal('advance_renewal'), newDate: isoDate, reason: reasonText }).strict(),
+  z.object({ kind: z.literal('change_interval'), interval: intervalSchema, reason: reasonText }).strict(),
+  z.object({ kind: z.literal('suspend'), reason: reasonText }).strict(),
+  z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText }).strict(),
+]);
+export const calendarChangeCreate = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('shift_renewal'), newDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
+  z.object({ kind: z.literal('advance_renewal'), newDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
+  z.object({ kind: z.literal('change_interval'), interval: intervalSchema, reason: reasonText, previewToken: z.string().min(10) }).strict(),
+  z.object({ kind: z.literal('suspend'), reason: reasonText, previewToken: z.string().min(10) }).strict(),
+  z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
+]);
+
 export const receiptBody = z.object({
   contactId: uuid,
   accountId: uuid,

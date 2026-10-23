@@ -28,6 +28,7 @@ interface Plan {
 async function buildPlan(ctx: Ctx, subscriptionId: string, i: SeatInput): Promise<Plan> {
   const sub = await ensureSubscription(ctx, subscriptionId);
   if (sub.status === 'archived') throw unprocessable('SUBSCRIPTION_ARCHIVED', 'The subscription is archived');
+  if (sub.status === 'suspended') throw unprocessable('SUBSCRIPTION_SUSPENDED', 'The subscription is suspended; reactivate it before adding people');
   const det = await one<{ mode: string; capacity: number }>(ctx.trx, sql<{ mode: string; capacity: number }>`select mode, capacity from subscription where owner_id = ${ctx.ownerId} and id = ${subscriptionId}`);
   if (det!.mode === 'personal') throw unprocessable('SUBSCRIPTION_PERSONAL', 'A personal subscription does not admit seats for other people');
 

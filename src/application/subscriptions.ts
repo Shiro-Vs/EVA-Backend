@@ -121,7 +121,7 @@ export async function createSubscription(ctx: Ctx, i: SubscriptionInput & { conf
 export async function ensureCycles(ctx: Ctx, subscriptionId: string, ahead = 1): Promise<number> {
   const sub = await one<{ status: string }>(ctx.trx, sql<{ status: string }>`select status from subscription where owner_id = ${ctx.ownerId} and id = ${subscriptionId} for update`);
   if (!sub) throw notFound('Subscription');
-  if (sub.status === 'archived') return 0;
+  if (sub.status !== 'active') return 0; // archivado o suspendido: no se emiten ciclos (RN-C09)
   const termsRows = await rows<TermsRow>(ctx.trx, sql<TermsRow>`
     select id, valid_from, valid_to, announced_price, interval_unit, interval_count, anchor_date from subscription_terms
     where owner_id = ${ctx.ownerId} and subscription_id = ${subscriptionId} order by valid_from`);
