@@ -25,7 +25,7 @@ interface ChargeRow {
   obligation_id: string; cycle_id: string; seq: number; start_date: string; end_date: string; quota_snapshot: string; pending: string; applied: string;
 }
 
-interface Plan {
+export interface Plan {
   seat: SeatInfo;
   termsId: string; oldQuota: bigint; newQuota: bigint; freeDays: number | null;
   items: Array<{ obligationId: string; cycleId: string; seq: number; start: string; end: string; amount: bigint; dueDate: string; pendingBefore: bigint; pendingAfter: bigint; creditFreed: bigint }>;
@@ -88,8 +88,7 @@ async function buildPlan(ctx: Ctx, seatId: string, i: QuotaChangeInput): Promise
 const inputsOf = (seatId: string, i: QuotaChangeInput) => ({ seatId, newQuota: formatMoney(parseMoney(i.newQuota)), effectiveFrom: i.effectiveFrom, mode: i.mode });
 const fingerprint = (p: Plan) => ({ terms: p.termsId, charges: p.items.map((x) => `${x.obligationId}:${x.pendingBefore}`) });
 
-export async function previewQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeInput) {
-  const p = await buildPlan(ctx, seatId, i);
+function planJson(p: Plan, i: QuotaChangeInput) {
   const sum = (f: (x: Plan['items'][number]) => bigint) => p.items.reduce((a, x) => a + f(x), 0n);
   const m = (v: bigint) => formatMoney(v);
   return {
@@ -101,8 +100,18 @@ export async function previewQuotaChange(ctx: Ctx, seatId: string, i: QuotaChang
     })),
     totals: { adjustment: m(sum((x) => x.amount)), pendingBefore: m(sum((x) => x.pendingBefore)), pendingAfter: m(sum((x) => x.pendingAfter)), creditFreed: m(sum((x) => x.creditFreed)) },
     futureCyclesNote: 'Los ciclos que aún no tienen cargo se emitirán con la cuota nueva, sin ajuste.',
-    previewToken: makePreviewToken(ctx.previewSecret, { scope: 'seat.quota_change', ownerId: ctx.ownerId, inputs: inputsOf(seatId, i), state: fingerprint(p) }, ctx.nowMs),
   };
+}
+
+/** Plan del cambio de cuota sin token: lo usa el cambio de precio, que agrupa varias plazas. */
+export async function quotaChangeState(ctx: Ctx, seatId: string, i: QuotaChangeInput) {
+  const p = await buildPlan(ctx, seatId, i);
+  return { plan: p, json: planJson(p, i), fingerprint: fingerprint(p) };
+}
+
+export async function previewQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeInput) {
+  const st = await quotaChangeState(ctx, seatId, i);
+  return { ...st.json, previewToken: makePreviewToken(ctx.previewSecret, { scope: 'seat.quota_change', ownerId: ctx.ownerId, inputs: inputsOf(seatId, i), state: st.fingerprint }, ctx.nowMs) };
 }
 
 /** Libera aplicaciones (las más recientes primero) hasta que el cargo deje de estar sobrepagado; el exceso queda como crédito libre. */
@@ -128,10 +137,8 @@ async function releaseExcess(ctx: Ctx, obligationId: string, excess: bigint): Pr
   }
 }
 
-export async function applyQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeInput & { previewToken: string }) {
-  const p = await buildPlan(ctx, seatId, i);
-  checkPreviewToken(ctx.previewSecret, i.previewToken, { scope: 'seat.quota_change', ownerId: ctx.ownerId, inputs: inputsOf(seatId, i), state: fingerprint(p) }, ctx.nowMs);
-
+/** Escribe el cambio de cuota ya validado (nueva versión de la cuota, ajustes y crédito liberado). */
+export async function commitQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeInput, p: Plan) {
   await sql`update seat_terms set valid_to = ${i.effectiveFrom}::date where owner_id = ${ctx.ownerId} and id = ${p.termsId}`.execute(ctx.trx);
   await sql`
     insert into seat_terms (owner_id, seat_id, valid_from, quota, free_days_threshold, reason, created_by)
@@ -150,10 +157,12 @@ export async function applyQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeI
   }
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'seat.quota_change', entityType: 'seat', entityId: seatId, reason: i.reason.trim(),
     changes: { from: formatMoney(p.oldQuota), to: formatMoney(p.newQuota), effectiveFrom: i.effectiveFrom, mode: i.mode, adjusted: p.items.length, creditFreed: formatMoney(creditFreed) } });
+  return { creditFreed, adjustments: p.items.map((x) => ({ obligationId: x.obligationId, cycleId: x.cycleId, amount: formatMoney(x.amount), dueDate: x.dueDate })) };
+}
 
-  return {
-    seat: await getSeat(ctx, seatId),
-    adjustments: p.items.map((x) => ({ obligationId: x.obligationId, cycleId: x.cycleId, amount: formatMoney(x.amount), dueDate: x.dueDate })),
-    creditFreed: formatMoney(creditFreed),
-  };
+export async function applyQuotaChange(ctx: Ctx, seatId: string, i: QuotaChangeInput & { previewToken: string }) {
+  const p = await buildPlan(ctx, seatId, i);
+  checkPreviewToken(ctx.previewSecret, i.previewToken, { scope: 'seat.quota_change', ownerId: ctx.ownerId, inputs: inputsOf(seatId, i), state: fingerprint(p) }, ctx.nowMs);
+  const r = await commitQuotaChange(ctx, seatId, i, p);
+  return { seat: await getSeat(ctx, seatId), adjustments: r.adjustments, creditFreed: formatMoney(r.creditFreed) };
 }

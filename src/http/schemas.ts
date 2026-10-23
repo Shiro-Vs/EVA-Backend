@@ -127,6 +127,15 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+export const priceChangeBody = z.object({
+  newPrice: money,
+  effectiveFrom: isoDate,
+  mode: z.enum(['per_renewal', 'lump']),
+  reason: text(200),
+  quotas: z.array(z.object({ seatId: uuid, quota: money }).strict()).max(50).optional(),
+}).strict();
+export const priceChangeCreate = priceChangeBody.extend({ previewToken: z.string().min(10) }).strict();
+
 export const debtConversionPreview = z.object({ obligationIds: z.array(uuid).min(1).max(100) }).strict();
 export const debtConversionCreate = debtConversionPreview.extend({ reason: text(200), previewToken: z.string().min(10) }).strict();
 

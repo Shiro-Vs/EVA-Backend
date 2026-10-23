@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as calendar from '../../application/calendarChanges.js';
 import * as individual from '../../application/individual.js';
+import * as price from '../../application/priceChange.js';
 import * as subs from '../../application/subscriptions.js';
 import { etag, ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -50,6 +51,20 @@ export function subscriptionRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     const body = parse(s.exitCreate, req.body);
     return withIdempotency(deps, req, reply, `POST /subscriptions/${id}/switch-to-individual`, body, async (ctx) => ({ status: 200, body: await individual.switchToIndividual(ctx, id, body.reason, body.previewToken) }));
+  });
+  app.get('/subscriptions/:id/terms', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => price.listTerms(ctx, id)) };
+  });
+  app.post('/subscriptions/:id/price-change/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.priceChangeBody, req.body);
+    return withCtx(deps, req, (ctx) => price.previewPriceChange(ctx, id, body));
+  });
+  app.post('/subscriptions/:id/price-change', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.priceChangeCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /subscriptions/${id}/price-change`, body, async (ctx) => ({ status: 200, body: await price.applyPriceChange(ctx, id, body) }));
   });
   app.patch('/subscriptions/:id', async (req, reply) => {
     const { id } = parse(idParam, req.params);

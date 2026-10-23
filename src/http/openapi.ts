@@ -81,6 +81,10 @@ export const ROUTES: Doc[] = [
   D('post', '/contacts/{id}/debt-conversion/preview', 'Préstamos', 'Vista previa de convertir deuda de servicio en un préstamo', { body: s.debtConversionPreview }),
   D('post', '/contacts/{id}/debt-conversion', 'Préstamos', 'Convierte deuda de servicio en un préstamo con detalle (la deuda total no cambia)', { body: s.debtConversionCreate, idempotent: true, status: 201 }),
 
+  D('get', '/subscriptions/{id}/terms', 'Servicios', 'Versiones de precio y calendario del servicio con su vigencia'),
+  D('post', '/subscriptions/{id}/price-change/preview', 'Servicios', 'Propuesta por cambio de precio del proveedor: cuota sugerida, plazas y diferencias', { body: s.priceChangeBody }),
+  D('post', '/subscriptions/{id}/price-change', 'Servicios', 'Aplica el nuevo precio desde un ciclo futuro y las cuotas que confirmes', { body: s.priceChangeCreate, idempotent: true }),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),
