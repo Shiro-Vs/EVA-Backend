@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as accounts from '../../application/accounts.js';
 import * as contacts from '../../application/contacts.js';
+import * as corrections from '../../application/corrections.js';
 import * as operations from '../../application/operations.js';
 import { contactStatement } from '../../application/statement.js';
 import { summary } from '../../application/summary.js';
@@ -72,6 +73,22 @@ export function coreRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => operations.getOperation(ctx, id));
+  });
+  app.patch('/operations/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.operationPatch, req.body);
+    const version = ifMatch(req);
+    return withCtx(deps, req, (ctx) => corrections.patchOperation(ctx, id, version, body));
+  });
+  app.post('/operations/:id/correct/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.operationCorrection, req.body);
+    return withCtx(deps, req, (ctx) => corrections.previewOperationCorrection(ctx, id, body));
+  });
+  app.post('/operations/:id/correct', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.operationCorrectionCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /operations/${id}/correct`, body, async (ctx) => ({ status: 201, body: await corrections.applyOperationCorrection(ctx, id, body) }));
   });
   app.post('/operations/:id/reverse', async (req, reply) => {
     const { id } = parse(idParam, req.params);

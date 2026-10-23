@@ -85,6 +85,15 @@ export const ROUTES: Doc[] = [
   D('post', '/subscriptions/{id}/price-change/preview', 'Servicios', 'Propuesta por cambio de precio del proveedor: cuota sugerida, plazas y diferencias', { body: s.priceChangeBody }),
   D('post', '/subscriptions/{id}/price-change', 'Servicios', 'Aplica el nuevo precio desde un ciclo futuro y las cuotas que confirmes', { body: s.priceChangeCreate, idempotent: true }),
 
+  D('patch', '/operations/{id}', 'Correcciones', 'Corrige descripción, categoría o contacto de una operación (sin efecto financiero)', { body: s.operationPatch, ifMatch: true }),
+  D('post', '/operations/{id}/correct/preview', 'Correcciones', 'Vista de efectos de corregir importe, cuenta o fecha de una operación', { body: s.operationCorrection }),
+  D('post', '/operations/{id}/correct', 'Correcciones', 'Revierte la operación y registra la corregida, en una transacción', { body: s.operationCorrectionCreate, idempotent: true, status: 201 }),
+  D('patch', '/receipts/{id}', 'Correcciones', 'Corrige la nota de un cobro (sin efecto financiero)', { body: s.receiptPatch, ifMatch: true }),
+  D('post', '/receipts/{id}/correct/preview', 'Correcciones', 'Vista de efectos de corregir importe, cuenta, fecha o reparto de un cobro', { body: s.receiptCorrection }),
+  D('post', '/receipts/{id}/correct', 'Correcciones', 'Anula el cobro y registra el corregido con su reparto, en una transacción', { body: s.receiptCorrectionCreate, idempotent: true, status: 201 }),
+  D('post', '/receipts/{id}/reverse/preview', 'Correcciones', 'Vista de efectos de revertir un cobro'),
+  D('post', '/receipts/{id}/reverse', 'Correcciones', 'Revierte un cobro: anula el ingreso y las deudas vuelven a quedar pendientes', { body: s.receiptReverseCreate, idempotent: true }),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),

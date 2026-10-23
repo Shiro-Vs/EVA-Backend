@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as corrections from '../../application/corrections.js';
 import * as loans from '../../application/loans.js';
 import * as receipts from '../../application/receipts.js';
 import * as refunds from '../../application/refunds.js';
 import * as supplier from '../../application/supplier.js';
-import { parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
+import { ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
 
 const idParam = z.object({ id: s.uuid });
@@ -61,6 +62,31 @@ export function billingRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/receipts/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => receipts.getReceipt(ctx, id));
+  });
+  app.patch('/receipts/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.receiptPatch, req.body);
+    const version = ifMatch(req);
+    return withCtx(deps, req, (ctx) => corrections.patchReceipt(ctx, id, version, body));
+  });
+  app.post('/receipts/:id/correct/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.receiptCorrection, req.body);
+    return withCtx(deps, req, (ctx) => corrections.previewReceiptCorrection(ctx, id, body));
+  });
+  app.post('/receipts/:id/correct', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.receiptCorrectionCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /receipts/${id}/correct`, body, async (ctx) => ({ status: 201, body: await corrections.applyReceiptCorrection(ctx, id, body) }));
+  });
+  app.post('/receipts/:id/reverse/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => corrections.previewReceiptReversal(ctx, id));
+  });
+  app.post('/receipts/:id/reverse', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.receiptReverseCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /receipts/${id}/reverse`, body, async (ctx) => ({ status: 200, body: await corrections.applyReceiptReversal(ctx, id, body.reason, body.previewToken) }));
   });
   app.get('/contacts/:id/credit', async (req) => {
     const { id } = parse(idParam, req.params);

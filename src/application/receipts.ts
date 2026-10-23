@@ -24,7 +24,7 @@ export interface ReceiptInput {
 
 interface PendingRow { obligation_id: string; pending_amount: string; contact_id: string; due_date: string | null; subscription_id: string | null }
 
-interface Plan {
+export interface Plan {
   amount: bigint; receivedOn: number; allocations: Array<{ obligationId: string; amount: bigint; pending: bigint }>;
   issues: AllocationIssue[]; remainder: bigint; reserveTo: string | null; balanceAfter: bigint;
 }
@@ -36,7 +36,7 @@ const normalized = (i: ReceiptInput) => ({
 });
 
 /** Valida y bloquea. Las obligaciones se bloquean en orden de ID antes de leer su pendiente (A28a). */
-async function buildPlan(ctx: Ctx, i: ReceiptInput): Promise<Plan> {
+export async function buildPlan(ctx: Ctx, i: ReceiptInput, opts: { excludeReceiptId?: string } = {}): Promise<Plan> {
   await syncAllSubscriptions(ctx);
   const amount = parseMoney(i.amount);
   if (amount <= 0n) throw unprocessable('VALIDATION_ERROR', 'El importe debe ser positivo');
@@ -53,7 +53,9 @@ async function buildPlan(ctx: Ctx, i: ReceiptInput): Promise<Plan> {
       select id from receivable_obligation where owner_id = ${ctx.ownerId} and id = any(${ids}::uuid[]) order by id for update`);
     if (locked.length !== ids.length) throw notFound('Obligation');
     pendings = await rows<PendingRow>(ctx.trx, sql<PendingRow>`
-      select b.obligation_id, b.pending_amount, b.contact_id, coalesce(mc.due_date, lc.due_date) as due_date, c.subscription_id
+      select b.obligation_id,
+        b.pending_amount + coalesce((select sum(pa.amount) from payment_allocation pa where pa.receipt_id = ${opts.excludeReceiptId ?? null}::uuid and pa.obligation_id = b.obligation_id and pa.status = 'active'), 0) as pending_amount,
+        b.contact_id, coalesce(mc.due_date, lc.due_date) as due_date, c.subscription_id
       from v_obligation_balance b
       left join member_charge mc on mc.obligation_id = b.obligation_id
       left join loan_component lc on lc.obligation_id = b.obligation_id
@@ -88,7 +90,7 @@ async function buildPlan(ctx: Ctx, i: ReceiptInput): Promise<Plan> {
 
 const state = (p: Plan, i: ReceiptInput) => ({ pendings: p.allocations.map((a) => [a.obligationId, formatMoney(a.pending)]).sort(), account: i.accountId, reserveTo: p.reserveTo });
 
-const issueJson = (x: AllocationIssue) => {
+export const issueJson = (x: AllocationIssue) => {
   switch (x.code) {
     case 'EXCEEDS_RECEIPT': return { code: 'EXCEEDS_RECEIPT', available: formatMoney(x.available), requested: formatMoney(x.requested) };
     case 'EXCEEDS_OBLIGATION': return { code: 'EXCEEDS_OBLIGATION', obligationId: x.obligationId, pending: formatMoney(x.pending), requested: formatMoney(x.requested) };
@@ -118,6 +120,11 @@ export async function createReceipt(ctx: Ctx, i: ReceiptInput & { previewToken?:
   }
   checkPreviewToken(ctx.previewSecret, i.previewToken, { scope: 'receipt.create', ownerId: ctx.ownerId, inputs: normalized(i), state: state(p, i) }, ctx.nowMs);
 
+  return writeReceipt(ctx, i, p);
+}
+
+/** Escribe un cobro ya validado: UN ingreso, sus aplicaciones y la reserva del sobrante. */
+export async function writeReceipt(ctx: Ctx, i: ReceiptInput, p: Plan) {
   // UN solo ingreso real; el reparto no crea ingresos adicionales (RN-R01).
   const opId = await insertOperation(ctx, { kind: 'income', date: p.receivedOn, description: i.note?.trim() || 'Cobro', contactId: i.contactId }, [{ accountId: i.accountId, amount: p.amount }]);
   const rec = await one<{ id: string; version: number }>(ctx.trx, sql<{ id: string; version: number }>`
@@ -142,7 +149,7 @@ export async function createReceipt(ctx: Ctx, i: ReceiptInput & { previewToken?:
   };
 }
 
-async function receiptAvailability(ctx: Ctx, receiptId: string) {
+export async function receiptAvailability(ctx: Ctx, receiptId: string) {
   const a = await one<{ received: string; applied: string; refunded: string; reserved: string }>(ctx.trx, sql<{ received: string; applied: string; refunded: string; reserved: string }>`
     select received, applied, refunded, reserved from v_receipt_availability where owner_id = ${ctx.ownerId} and receipt_id = ${receiptId}`);
   const v = availability({ received: parseMoney(a!.received), applied: parseMoney(a!.applied), refunded: parseMoney(a!.refunded), reserved: parseMoney(a!.reserved) });
@@ -161,7 +168,8 @@ export async function getReceipt(ctx: Ctx, id: string) {
     id: r.id, contactId: r.contact_id, operationId: r.operation_id, amount: formatMoney(parseMoney(r.amount)), receivedOn: r.received_on, note: r.note, status: r.status, version: r.version, createdAt: ts(r.created_at),
     allocations: allocs.map((a) => ({ id: a.id, obligationId: a.obligation_id, amount: formatMoney(parseMoney(a.amount)), origin: a.origin, status: a.status, releasedReason: a.released_reason })),
     reservations: resv.map((x) => ({ id: x.id, subscriptionId: x.target_subscription_id, amount: formatMoney(parseMoney(x.amount)), status: x.status })),
-    availability: await receiptAvailability(ctx, id),
+    // Un cobro revertido ya no aporta dinero disponible: no tiene disponibilidad.
+    availability: r.status === 'active' ? await receiptAvailability(ctx, id) : null,
   };
 }
 

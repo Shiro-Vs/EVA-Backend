@@ -127,6 +127,26 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+export const operationPatch = z.object({
+  description: z.string().trim().max(200).optional(),
+  categoryId: uuid.nullable().optional(),
+  contactId: uuid.nullable().optional(),
+}).strict();
+export const receiptPatch = z.object({ note: z.string().trim().max(200).nullable().optional() }).strict();
+
+export const operationCorrection = z.object({ amount: money.optional(), accountId: uuid.optional(), toAccountId: uuid.optional(), date: isoDate.optional() }).strict();
+export const operationCorrectionCreate = operationCorrection.extend({ reason: text(200), previewToken: z.string().min(10) }).strict();
+
+export const receiptCorrection = z.object({
+  amount: money.optional(),
+  accountId: uuid.optional(),
+  receivedOn: isoDate.optional(),
+  allocations: z.array(z.object({ obligationId: uuid, amount: money }).strict()).max(100).optional(),
+  reserveRemainder: z.object({ subscriptionId: uuid }).strict().nullable().optional(),
+}).strict();
+export const receiptCorrectionCreate = receiptCorrection.extend({ reason: text(200), previewToken: z.string().min(10) }).strict();
+export const receiptReverseCreate = z.object({ reason: text(200), previewToken: z.string().min(10) }).strict();
+
 export const priceChangeBody = z.object({
   newPrice: money,
   effectiveFrom: isoDate,
