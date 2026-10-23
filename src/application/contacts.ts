@@ -31,7 +31,7 @@ const base = (today: number) => sql`
     coalesce((select sum(a.free) from v_receipt_availability a where a.owner_id = c.owner_id and a.contact_id = c.id), 0.00) as credit_free,
     coalesce((select sum(a.reserved) from v_receipt_availability a where a.owner_id = c.owner_id and a.contact_id = c.id), 0.00) as credit_reserved,
     (select count(*) from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id
-       where m.owner_id = c.owner_id and m.contact_id = c.id and s.end_date is null) as active_seats,
+       where m.owner_id = c.owner_id and m.contact_id = c.id and (s.end_date is null or s.end_date > ${formatISO(today)}::date)) as active_seats,
     (select count(distinct m.subscription_id) from membership m where m.owner_id = c.owner_id and m.contact_id = c.id and m.status <> 'ended') as services
   from contact c`;
 

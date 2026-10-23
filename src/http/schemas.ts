@@ -126,6 +126,15 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+export const exitPreviewBody = z.object({ reason: text(200).optional() }).strict();
+export const exitBody = z.object({ reason: text(200) }).strict();
+export const exitCreate = exitBody.extend({ previewToken: z.string().min(10) }).strict();
+
+export const refundCreate = z.object({ receiptId: uuid, amount: money, reason: text(200) }).strict();
+export const refundPay = z.object({ accountId: uuid, paidOn: isoDate.optional(), note: z.string().trim().max(200).optional() }).strict();
+export const refundListQuery = z.object({ status: z.enum(['planned', 'paid', 'cancelled']).optional(), contactId: uuid.optional() });
+export const loanListQuery = z.object({ contactId: uuid.optional() });
+
 export const receiptBody = z.object({
   contactId: uuid,
   accountId: uuid,

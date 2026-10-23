@@ -1,0 +1,105 @@
+import { sql } from 'kysely';
+import { formatISO } from '../domain/localDate.js';
+import { formatMoney, parseMoney } from '../domain/money.js';
+import { notFound, unprocessable } from '../http/errors.js';
+import { audit } from '../infra/audit.js';
+import { one, rows } from '../infra/db/db.js';
+import { ts, type Ctx } from './context.js';
+
+export type ConversionTrigger = 'exit' | 'individual_switch' | 'courtesy_choice' | 'manual';
+
+interface SourceRow {
+  obligation_id: string; pending: string; due_date: string; start_date: string; end_date: string; seat_label: string; subscription_name: string;
+}
+
+/**
+ * Convierte la deuda pendiente de unos cargos en UN préstamo con un componente por cargo (RN-X07, A12).
+ * Es atómico y no crea ingresos ni egresos: el pendiente de origen baja por conversión y el componente lo abre,
+ * así que la deuda total del contacto no cambia. Devuelve null si no había nada pendiente.
+ */
+export async function convertDebtToLoan(ctx: Ctx, o: { contactId: string; obligationIds: string[]; trigger: ConversionTrigger; reason: string }) {
+  if (o.obligationIds.length === 0) return null;
+  const src = await rows<SourceRow>(ctx.trx, sql<SourceRow>`
+    select b.obligation_id, b.pending_amount as pending, mc.due_date, c.start_date, c.end_date, s.label as seat_label, sub.name as subscription_name
+    from v_obligation_balance b
+    join member_charge mc on mc.obligation_id = b.obligation_id
+    join billing_cycle c on c.id = mc.cycle_id and c.owner_id = mc.owner_id
+    join seat s on s.id = mc.seat_id and s.owner_id = mc.owner_id
+    join subscription sub on sub.id = c.subscription_id and sub.owner_id = c.owner_id
+    where b.owner_id = ${ctx.ownerId} and b.contact_id = ${o.contactId} and b.obligation_id = any(${o.obligationIds}::uuid[]) and b.pending_amount > 0
+    order by c.start_date, b.obligation_id`);
+  if (src.length === 0) return null;
+  const principal = src.reduce((a, r) => a + parseMoney(r.pending), 0n);
+  const today = formatISO(ctx.today);
+
+  const loan = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
+    insert into loan (owner_id, contact_id, principal, opened_on, origin, note)
+    values (${ctx.ownerId}, ${o.contactId}, ${formatMoney(principal)}, ${today}, 'debt_conversion', ${o.reason}) returning id`);
+  const conv = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
+    insert into debt_conversion (owner_id, contact_id, loan_id, converted_on, trigger, reason, created_by)
+    values (${ctx.ownerId}, ${o.contactId}, ${loan!.id}, ${today}, ${o.trigger}, ${o.reason}, ${ctx.actorId}) returning id`);
+  for (const r of src) {
+    const ob = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
+      insert into receivable_obligation (owner_id, contact_id, kind) values (${ctx.ownerId}, ${o.contactId}, 'loan_component') returning id`);
+    await sql`
+      insert into loan_component (obligation_id, owner_id, contact_id, loan_id, concept, period_label, origin_obligation_id, amount, due_date)
+      values (${ob!.id}, ${ctx.ownerId}, ${o.contactId}, ${loan!.id}, ${`${r.subscription_name} — ${r.seat_label}`}, ${`ciclo ${r.start_date} → ${r.end_date}`},
+              ${r.obligation_id}, ${formatMoney(parseMoney(r.pending))}, ${r.due_date})`.execute(ctx.trx);
+    await sql`
+      insert into debt_conversion_item (owner_id, conversion_id, source_obligation_id, target_obligation_id, amount)
+      values (${ctx.ownerId}, ${conv!.id}, ${r.obligation_id}, ${ob!.id}, ${formatMoney(parseMoney(r.pending))})`.execute(ctx.trx);
+  }
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'debt.convert', entityType: 'loan', entityId: loan!.id, reason: o.reason,
+    changes: { trigger: o.trigger, principal: formatMoney(principal), components: src.length } });
+  return getLoan(ctx, loan!.id);
+}
+
+interface LoanRow { id: string; contact_id: string; contact_name: string; principal: string; opened_on: string; origin: string; note: string | null; created_at: unknown; trigger: string | null; reason: string | null }
+interface CompRow { obligation_id: string; concept: string; period_label: string | null; origin_obligation_id: string | null; amount: string; due_date: string | null; pending: string }
+
+const loanBase = sql`
+  select l.id, l.contact_id, c.name as contact_name, l.principal, l.opened_on, l.origin, l.note, l.created_at, dc.trigger, dc.reason
+  from loan l join contact c on c.id = l.contact_id and c.owner_id = l.owner_id
+  left join debt_conversion dc on dc.loan_id = l.id and dc.owner_id = l.owner_id`;
+
+async function toView(ctx: Ctx, l: LoanRow) {
+  const comps = await rows<CompRow>(ctx.trx, sql<CompRow>`
+    select lc.obligation_id, lc.concept, lc.period_label, lc.origin_obligation_id, lc.amount, lc.due_date, b.pending_amount as pending
+    from loan_component lc join v_obligation_balance b on b.obligation_id = lc.obligation_id
+    where lc.owner_id = ${ctx.ownerId} and lc.loan_id = ${l.id} order by lc.due_date nulls last, lc.created_at, lc.obligation_id`);
+  const pending = comps.reduce((a, c) => a + parseMoney(c.pending), 0n);
+  return {
+    id: l.id, contactId: l.contact_id, contactName: l.contact_name, principal: formatMoney(parseMoney(l.principal)), openedOn: l.opened_on, origin: l.origin,
+    // Estado derivado: el préstamo se cierra cuando todos sus componentes están saldados.
+    status: pending === 0n ? 'closed' : 'open', pending: formatMoney(pending),
+    conversion: l.trigger ? { trigger: l.trigger, reason: l.reason } : null,
+    createdAt: ts(l.created_at),
+    components: comps.map((c) => ({
+      obligationId: c.obligation_id, concept: c.concept, periodLabel: c.period_label, originObligationId: c.origin_obligation_id,
+      amount: formatMoney(parseMoney(c.amount)), pending: formatMoney(parseMoney(c.pending)), dueDate: c.due_date,
+    })),
+  };
+}
+
+export async function getLoan(ctx: Ctx, id: string) {
+  const l = await one<LoanRow>(ctx.trx, sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.id = ${id}`);
+  if (!l) throw notFound('Loan');
+  return toView(ctx, l);
+}
+
+export async function listLoans(ctx: Ctx, contactId?: string) {
+  if (contactId) {
+    const c = await one(ctx.trx, sql`select 1 as ok from contact where owner_id = ${ctx.ownerId} and id = ${contactId}`);
+    if (!c) throw notFound('Contact');
+  }
+  const ls = await rows<LoanRow>(ctx.trx, contactId
+    ? sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.contact_id = ${contactId} order by l.opened_on desc, l.created_at desc`
+    : sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} order by l.opened_on desc, l.created_at desc`);
+  const out = [];
+  for (const l of ls) out.push(await toView(ctx, l));
+  return out;
+}
+
+export function assertConvertible(pending: bigint) {
+  if (pending <= 0n) throw unprocessable('NOTHING_TO_CONVERT', 'There is no pending debt to convert');
+}

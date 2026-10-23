@@ -7,7 +7,7 @@ import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
 import { applyReservations, insertCharge, listCharges } from './charges.js';
-import type { Ctx } from './context.js';
+import { ts, type Ctx } from './context.js';
 import { ensureSubscription } from './subscriptions.js';
 import { syncSubscription } from './sync.js';
 
@@ -22,7 +22,7 @@ export interface SeatInput {
 interface Plan {
   contactId: string; contactName: string; label: string; quota: bigint; joinDate: number; g: number; gSource: 'plaza' | 'usuario';
   cycle: { id: string; start: number; end: number; baseDays: number };
-  occupied: number; capacity: number; result: JoinResult; existingMembershipId: string | null;
+  occupied: number; capacity: number; result: JoinResult; existingMembershipId: string | null; existingStatus: string | null;
 }
 
 async function buildPlan(ctx: Ctx, subscriptionId: string, i: SeatInput): Promise<Plan> {
@@ -62,11 +62,11 @@ async function buildPlan(ctx: Ctx, subscriptionId: string, i: SeatInput): Promis
   const occ = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
     select count(*) as n from seat where owner_id = ${ctx.ownerId} and subscription_id = ${subscriptionId}
       and start_date <= ${formatISO(joinDate)}::date and (end_date is null or end_date > ${formatISO(joinDate)}::date)`);
-  const existing = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
-    select id from membership where owner_id = ${ctx.ownerId} and subscription_id = ${subscriptionId} and contact_id = ${i.contactId} and status <> 'ended'`);
+  const existing = await one<{ id: string; status: string }>(ctx.trx, sql<{ id: string; status: string }>`
+    select id, status from membership where owner_id = ${ctx.ownerId} and subscription_id = ${subscriptionId} and contact_id = ${i.contactId} and status <> 'ended'`);
   return {
     contactId: i.contactId, contactName: contact.name, label: i.label.trim(), quota, joinDate, g, gSource: hasOverride ? 'plaza' : 'usuario',
-    cycle, occupied: Number(occ!.n), capacity: det!.capacity, result, existingMembershipId: existing?.id ?? null,
+    cycle, occupied: Number(occ!.n), capacity: det!.capacity, result, existingMembershipId: existing?.id ?? null, existingStatus: existing?.status ?? null,
   };
 }
 
@@ -108,6 +108,10 @@ export async function createSeat(ctx: Ctx, subscriptionId: string, i: SeatInput 
   if (p.occupied >= p.capacity) throw unprocessable('CAPACITY_EXCEEDED', 'There are no free seats on that date', { occupied: p.occupied, capacity: p.capacity });
 
   let membershipId = p.existingMembershipId;
+  if (membershipId && p.existingStatus === 'ending') {
+    // Vuelve a entrar mientras su baja anterior sigue programada: la participación continúa (la plaza anterior conserva su fecha final).
+    await sql`update membership set status = 'active', scheduled_end_date = null, end_reason = null where owner_id = ${ctx.ownerId} and id = ${membershipId}`.execute(ctx.trx);
+  }
   if (!membershipId) {
     const mem = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
       insert into membership (owner_id, subscription_id, contact_id, is_owner, start_date) values (${ctx.ownerId}, ${subscriptionId}, ${p.contactId}, false, ${formatISO(p.joinDate)}) returning id`);
@@ -157,13 +161,22 @@ export async function getSeat(ctx: Ctx, id: string) {
   await syncSubscription(ctx, found.subscription_id);
   const s = await one<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase(ctx.today)} where s.owner_id = ${ctx.ownerId} and s.id = ${id}`);
   if (!s) throw notFound('Seat');
-  return { ...seatJson(s), charges: await listCharges(ctx, sql`mc.seat_id = ${id}`) };
+  const voided = await rows<{ obligation_id: string; start_date: string; end_date: string; gross_amount: string; void_reason: string; voided_at: unknown }>(ctx.trx, sql`
+    select mc.obligation_id, c.start_date, c.end_date, mc.gross_amount, mc.void_reason, mc.voided_at
+    from member_charge mc join billing_cycle c on c.id = mc.cycle_id and c.owner_id = mc.owner_id
+    where mc.owner_id = ${ctx.ownerId} and mc.seat_id = ${id} and mc.status = 'void' order by c.start_date`);
+  return {
+    ...seatJson(s),
+    charges: await listCharges(ctx, sql`mc.seat_id = ${id}`),
+    // RN-CH07: un cargo cancelado conserva su historial y no entra en pendientes ni en costos.
+    voidedCharges: voided.map((v) => ({ obligationId: v.obligation_id, cycle: { start: v.start_date, end: v.end_date }, gross: formatMoney(parseMoney(v.gross_amount)), reason: v.void_reason, voidedAt: ts(v.voided_at) })),
+  };
 }
 
 export async function listSeats(ctx: Ctx, subscriptionId: string) {
   await ensureSubscription(ctx, subscriptionId);
   await syncSubscription(ctx, subscriptionId);
-  const seats = await rows<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase(ctx.today)} where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${subscriptionId} and s.end_date is null order by s.created_at`);
+  const seats = await rows<SeatRow>(ctx.trx, sql<SeatRow>`${seatBase(ctx.today)} where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${subscriptionId} and (s.end_date is null or s.end_date > ${formatISO(ctx.today)}::date) order by s.created_at`);
   const out = [];
   for (const s of seats) {
     const charges = s.is_owner ? [] : await listCharges(ctx, sql`mc.seat_id = ${s.id}`);

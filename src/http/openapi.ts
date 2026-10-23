@@ -67,6 +67,15 @@ export const ROUTES: Doc[] = [
   D('post', '/subscriptions/{id}/calendar-changes', 'Calendario', 'Desplaza o adelanta la renovación, cambia la frecuencia, suspende o reactiva', { body: s.calendarChangeCreate, idempotent: true, status: 201 }),
   D('get', '/subscriptions/{id}/calendar-changes', 'Calendario', 'Historial de cambios de calendario'),
 
+  D('post', '/seats/{id}/exit/preview', 'Bajas', 'Vista previa de la baja: modo, fecha efectiva, cobro, cargos cancelados, devoluciones y préstamo', { body: s.exitPreviewBody }),
+  D('post', '/seats/{id}/exit', 'Bajas', 'Ejecuta la baja de forma atómica (devoluciones programadas y deuda convertida en préstamo)', { body: s.exitCreate, idempotent: true }),
+  D('get', '/refunds', 'Devoluciones', 'Devoluciones (programadas, pagadas o canceladas)'),
+  D('post', '/refunds', 'Devoluciones', 'Programa la devolución de crédito libre de un cobro', { body: s.refundCreate, idempotent: true, status: 201 }),
+  D('post', '/refunds/{id}/pay', 'Devoluciones', 'Registra la salida real del dinero desde una cuenta', { body: s.refundPay, idempotent: true }),
+  D('post', '/refunds/{id}/cancel', 'Devoluciones', 'Cancela una devolución programada (el dinero vuelve a ser crédito libre)', { body: s.reasonBody, idempotent: true }),
+  D('get', '/loans', 'Préstamos', 'Préstamos otorgados (por conversión de deuda), con sus componentes'),
+  D('get', '/loans/{id}', 'Préstamos', 'Detalle de un préstamo con origen y saldo de cada componente'),
+
   D('get', '/billing-cycles/{id}', 'Pagos', 'Ciclo con cargos, pago al proveedor y costo'),
   D('post', '/billing-cycles/{id}/supplier-payment', 'Pagos', 'Registra el pago real al proveedor', { body: s.supplierBody, idempotent: true, status: 201 }),
   D('post', '/supplier-payments/{id}/reverse', 'Pagos', 'Revierte un pago al proveedor', { body: s.reasonBody, idempotent: true }),

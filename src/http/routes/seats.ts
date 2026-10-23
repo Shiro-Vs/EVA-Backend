@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as courtesies from '../../application/courtesies.js';
+import * as exits from '../../application/exits.js';
 import * as quota from '../../application/quota.js';
 import * as seats from '../../application/seats.js';
 import { parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
@@ -47,6 +48,18 @@ export function seatRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.post('/courtesies/:id/end', async (req, reply) => {
     const { id } = parse(idParam, req.params);
     return withIdempotency(deps, req, reply, `POST /courtesies/${id}/end`, {}, async (ctx) => ({ status: 200, body: await courtesies.endCourtesy(ctx, id) }));
+  });
+
+  // Bajas (RN-X01..X07)
+  app.post('/seats/:id/exit/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    parse(s.exitPreviewBody, req.body);
+    return withCtx(deps, req, (ctx) => exits.previewExit(ctx, id));
+  });
+  app.post('/seats/:id/exit', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.exitCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /seats/${id}/exit`, body, async (ctx) => ({ status: 200, body: await exits.executeExit(ctx, id, body.reason, body.previewToken) }));
   });
 
   // Cambio de cuota (RN-Q01..Q04)

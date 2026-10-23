@@ -6,6 +6,7 @@ import { one, rows } from '../infra/db/db.js';
 import { listCharges } from './charges.js';
 import type { Ctx } from './context.js';
 import { getContact } from './contacts.js';
+import { listLoans } from './loans.js';
 
 const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const human = (isoDate: string) => { const { m, d } = toYMD(parseISO(isoDate)); return `${d} ${MES[m - 1]}`; };
@@ -48,12 +49,14 @@ export async function contactStatement(ctx: Ctx, contactId: string) {
       lines.push(`• ${s.name} · ${c.seatLabel}: ${soles(parseMoney(c.pending))} (${c.overdue ? 'venció' : 'vence'} el ${human(c.dueDate)})`);
     }
   }
+  const loans = await listLoans(ctx, contactId);
+  for (const l of loans.filter((x) => parseMoney(x.pending) > 0n)) lines.push(`• Préstamo (deuda convertida): ${soles(parseMoney(l.pending))}`);
   const total = parseMoney(contact.totals.pending);
   const shareText = total === 0n
     ? `Hola ${contact.name}, estás al día. ¡Gracias!`
     : [`Hola ${contact.name}, este es tu estado de cuenta:`, ...lines, `Total pendiente: ${soles(total)}`].join('\n');
 
-  return { contact: { id: contact.id, name: contact.name }, totals: contact.totals, services, loans: [], shareText, asOf: formatISO(ctx.today) };
+  return { contact: { id: contact.id, name: contact.name }, totals: contact.totals, services, loans, shareText, asOf: formatISO(ctx.today) };
 }
 
 export async function assertContact(ctx: Ctx, id: string) {

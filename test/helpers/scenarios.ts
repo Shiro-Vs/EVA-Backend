@@ -21,8 +21,8 @@ export async function createContact(api: Api, token: string, name: string) {
   return r.body;
 }
 
-export async function createAccount(api: Api, token: string, name = 'BCP', opening = '200.00', type = 'bank') {
-  const r = await api.post(token, '/accounts', { name, type, openingBalance: { amount: opening, date: '2026-10-01' } });
+export async function createAccount(api: Api, token: string, name = 'BCP', opening = '200.00', type = 'bank', openingDate = '2026-10-01') {
+  const r = await api.post(token, '/accounts', { name, type, openingBalance: { amount: opening, date: openingDate } });
   expect(r.status, JSON.stringify(r.body)).toBe(201);
   return r.body;
 }

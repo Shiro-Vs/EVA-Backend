@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as loans from '../../application/loans.js';
 import * as receipts from '../../application/receipts.js';
+import * as refunds from '../../application/refunds.js';
 import * as supplier from '../../application/supplier.js';
 import { parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -9,6 +11,34 @@ const idParam = z.object({ id: s.uuid });
 
 
 export function billingRoutes(app: FastifyInstance, deps: HttpDeps) {
+  // ---------- Devoluciones (RN-X06) y préstamos (RN-X07) ----------
+  app.get('/refunds', async (req) => {
+    const q = parse(s.refundListQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => refunds.listRefunds(ctx, q.status, q.contactId)) };
+  });
+  app.post('/refunds', async (req, reply) => {
+    const body = parse(s.refundCreate, req.body);
+    return withIdempotency(deps, req, reply, 'POST /refunds', body, async (ctx) => ({ status: 201, body: await refunds.createRefund(ctx, body) }));
+  });
+  app.post('/refunds/:id/pay', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.refundPay, req.body);
+    return withIdempotency(deps, req, reply, `POST /refunds/${id}/pay`, body, async (ctx) => ({ status: 200, body: await refunds.payRefund(ctx, id, body) }));
+  });
+  app.post('/refunds/:id/cancel', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reasonBody, req.body);
+    return withIdempotency(deps, req, reply, `POST /refunds/${id}/cancel`, body, async (ctx) => ({ status: 200, body: await refunds.cancelRefund(ctx, id, body.reason) }));
+  });
+  app.get('/loans', async (req) => {
+    const q = parse(s.loanListQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => loans.listLoans(ctx, q.contactId)) };
+  });
+  app.get('/loans/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => loans.getLoan(ctx, id));
+  });
+
   // ---------- Cobros ----------
   app.post('/receipts/preview', async (req) => {
     const body = parse(s.receiptBody, req.body);

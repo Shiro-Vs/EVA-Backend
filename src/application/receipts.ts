@@ -22,7 +22,7 @@ export interface ReceiptInput {
   reserveRemainder?: { subscriptionId: string } | null;
 }
 
-interface PendingRow { obligation_id: string; pending_amount: string; contact_id: string; due_date: string; subscription_id: string }
+interface PendingRow { obligation_id: string; pending_amount: string; contact_id: string; due_date: string | null; subscription_id: string | null }
 
 interface Plan {
   amount: bigint; receivedOn: number; allocations: Array<{ obligationId: string; amount: bigint; pending: bigint }>;
@@ -53,9 +53,11 @@ async function buildPlan(ctx: Ctx, i: ReceiptInput): Promise<Plan> {
       select id from receivable_obligation where owner_id = ${ctx.ownerId} and id = any(${ids}::uuid[]) order by id for update`);
     if (locked.length !== ids.length) throw notFound('Obligation');
     pendings = await rows<PendingRow>(ctx.trx, sql<PendingRow>`
-      select b.obligation_id, b.pending_amount, b.contact_id, mc.due_date, c.subscription_id
-      from v_obligation_balance b join member_charge mc on mc.obligation_id = b.obligation_id
-      join billing_cycle c on c.id = mc.cycle_id and c.owner_id = mc.owner_id
+      select b.obligation_id, b.pending_amount, b.contact_id, coalesce(mc.due_date, lc.due_date) as due_date, c.subscription_id
+      from v_obligation_balance b
+      left join member_charge mc on mc.obligation_id = b.obligation_id
+      left join loan_component lc on lc.obligation_id = b.obligation_id
+      left join billing_cycle c on c.id = mc.cycle_id and c.owner_id = mc.owner_id
       where b.owner_id = ${ctx.ownerId} and b.obligation_id = any(${ids}::uuid[])`);
     if (pendings.length !== ids.length) throw unprocessable('OBLIGATION_NOT_PAYABLE', 'One of the charges is cancelled or not payable');
     if (pendings.some((p) => p.contact_id !== i.contactId)) throw unprocessable('ALLOCATION_CONTACT_MISMATCH', 'The receipt and the charge belong to different contacts');
@@ -72,7 +74,7 @@ async function buildPlan(ctx: Ctx, i: ReceiptInput): Promise<Plan> {
   if (remainder > 0n) {
     if (i.reserveRemainder) reserveTo = i.reserveRemainder.subscriptionId;
     else if (i.reserveRemainder === undefined) {
-      const subs = new Set(pendings.map((p) => p.subscription_id));
+      const subs = new Set(pendings.map((p) => p.subscription_id).filter((x): x is string => x !== null));
       if (subs.size === 1) reserveTo = [...subs][0]!;
     }
     if (reserveTo) {

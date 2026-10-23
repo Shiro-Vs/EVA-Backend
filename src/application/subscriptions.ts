@@ -229,7 +229,7 @@ export async function archiveSubscription(ctx: Ctx, id: string) {
   await ensureSubscription(ctx, id);
   const n = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
     select count(*) as n from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id
-    where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${id} and s.end_date is null and not m.is_owner`);
+    where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${id} and (s.end_date is null or s.end_date > ${formatISO(ctx.today)}::date) and not m.is_owner`);
   if (Number(n!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_ACTIVE_SEATS', 'The subscription still has active seats; remove them first');
   await sql`update subscription set status = 'archived' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.archive', entityType: 'subscription', entityId: id });
