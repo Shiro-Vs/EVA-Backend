@@ -6,6 +6,7 @@ import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
 import type { Ctx } from './context.js';
+import { assertActiveCategory } from './categories.js';
 import { activeAccount, getOperation, insertOperation, requireOwned, resolveDate, reverseOperationCore } from './operations.js';
 import { buildPlan as buildReceiptPlan, getReceipt, issueJson, writeReceipt, type ReceiptInput } from './receipts.js';
 
@@ -42,7 +43,7 @@ export async function patchOperation(ctx: Ctx, id: string, version: number, p: O
   if (op.version !== version) throw conflict('CONFLICT_VERSION', 'The operation was modified; reload and retry');
   if (op.kind === 'reversal' || op.status === 'reversed') throw unprocessable('OPERATION_NOT_EDITABLE', 'A reversed operation or a reversal cannot be edited: the evidence stays as it was');
 
-  if (p.categoryId) await requireOwned(ctx, 'category', p.categoryId);
+  if (p.categoryId) await assertActiveCategory(ctx, p.categoryId);
   if (p.contactId) await requireOwned(ctx, 'contact', p.contactId);
   if (p.contactId !== undefined && p.contactId !== op.contact_id) {
     const linked = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
@@ -57,6 +58,9 @@ export async function patchOperation(ctx: Ctx, id: string, version: number, p: O
   await sql`
     update financial_operation set description = ${next.description}, category_id = ${next.category_id}, contact_id = ${next.contact_id}
     where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  if (next.category_id && next.category_id !== op.category_id) {
+    await sql`insert into classification_decision (owner_id, operation_id, rule_id, category_id, mode) values (${ctx.ownerId}, ${id}, null, ${next.category_id}, 'manual')`.execute(ctx.trx);
+  }
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'operation.edit', entityType: 'financial_operation', entityId: id,
     changes: { before: { description: op.description, categoryId: op.category_id, contactId: op.contact_id }, after: { description: next.description, categoryId: next.category_id, contactId: next.contact_id } } });
   return getOperation(ctx, id);

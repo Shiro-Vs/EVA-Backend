@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { AppError, conflict, notFound } from '../http/errors.js';
 import { one, type Trx } from '../infra/db/db.js';
 import type { AuthUser } from '../infra/auth/auth.js';
+import { seedCategories } from './categories.js';
 import { ts } from './context.js';
 
 interface Row {
@@ -25,9 +26,10 @@ export const mapProfile = (r: Row) => ({
 /** Crea el perfil en el primer acceso (RN-SE). Idempotente. */
 export async function ensureProfile(trx: Trx, user: AuthUser) {
   const name = user.name?.trim() || user.email?.split('@')[0] || 'Usuario';
-  await sql`
+  const created = await one<{ id: string }>(trx, sql<{ id: string }>`
     insert into user_profile (id, display_name, email) values (${user.userId}, ${name}, ${user.email ?? null})
-    on conflict (id) do nothing`.execute(trx);
+    on conflict (id) do nothing returning id`);
+  if (created) await seedCategories(trx, user.userId); // categorías sugeridas, editables y archivables (12 §11)
   const row = await one<Row>(trx, sql<Row>`select * from user_profile where id = ${user.userId}`);
   if (!row) throw notFound('Profile');
   return mapProfile(row);

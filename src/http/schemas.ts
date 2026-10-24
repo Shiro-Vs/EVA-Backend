@@ -127,6 +127,41 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+export const categoryCreate = z.object({ name: text(60), parentId: uuid.nullish(), icon: optText(40), color: optText(20) }).strict();
+export const categoryPatch = z.object({ name: text(60).optional(), icon: optText(40), color: optText(20) }).strict();
+export const categoryListQuery = z.object({ status: z.enum(['active', 'archived']).optional() });
+
+const ruleFields = {
+  name: text(80),
+  priority: z.number().int().min(0).max(100000).optional(),
+  accountId: uuid.nullish(),
+  direction: z.enum(['income', 'expense']).nullish(),
+  amountMin: money.nullish(),
+  amountMax: money.nullish(),
+  textContains: optText(80),
+  action: z.enum(['assign', 'suggest']),
+  categoryId: uuid,
+};
+export const ruleCreate = z.object(ruleFields).strict();
+export const rulePatch = z.object(ruleFields).partial().strict();
+export const ruleListQuery = z.object({ status: z.enum(['active', 'archived']).optional() });
+export const classificationSuggest = z.object({ accountId: uuid, direction: z.enum(['income', 'expense']), amount: money, text: z.string().trim().max(200).optional() }).strict();
+export const classificationApplyPreview = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
+export const classificationApply = classificationApplyPreview.extend({ previewToken: z.string().min(10) }).strict();
+
+export const operationListQuery = z.object({
+  status: z.enum(['confirmed', 'reversed']).optional(),
+  kind: z.enum(['income', 'expense', 'transfer', 'adjustment', 'reversal', 'opening']).optional(),
+  accountId: uuid.optional(),
+  categoryId: uuid.optional(),
+  uncategorized: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  q: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().optional(),
+});
+
 export const operationPatch = z.object({
   description: z.string().trim().max(200).optional(),
   categoryId: uuid.nullable().optional(),

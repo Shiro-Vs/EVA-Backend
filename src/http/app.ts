@@ -8,6 +8,7 @@ import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
 import { coreRoutes } from './routes/core.js';
+import { financeRoutes } from './routes/finance.js';
 import { seatRoutes } from './routes/seats.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 
@@ -110,6 +111,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       subscriptionRoutes(v1, deps);
       seatRoutes(v1, deps);
       billingRoutes(v1, deps);
+      financeRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );
