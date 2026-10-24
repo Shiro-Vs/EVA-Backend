@@ -12,6 +12,9 @@ export const extractedMovement = z.object({
   amount: money.nullable().optional().transform((v) => v ?? null),
   currency: z.string().length(3).default('PEN'),
   occurredOn: isoDate.nullable().optional().transform((v) => v ?? null),
+  /** Hora local 24 h (HH:MM); el modelo puede devolver HH:MM:SS y se recorta. */
+  occurredTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'hora HH:MM').nullable().optional().transform((v) => (v ? v.slice(0, 5) : null)),
+  /** Se conserva tal cual, incluido el asterisco con que Yape trunca el apellido: indica que el nombre está incompleto. */
   counterparty: text,
   channel: text,
   operationId: text,
@@ -54,19 +57,28 @@ export function dayDistance(a: string, b: string): number {
   return Math.abs(parseISO(a) - parseISO(b));
 }
 
+const toMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+/** Minutos entre dos momentos locales (fecha + HH:MM). */
+export function minutesApart(dateA: string, timeA: string, dateB: string, timeB: string): number {
+  return Math.abs((parseISO(dateA) - parseISO(dateB)) * 1440 + toMinutes(timeA) - toMinutes(timeB));
+}
+
 /**
  * Posible coincidencia entre dos registros (RN-DU02): mismo identificador de operación, o mismo importe + misma cuenta/canal
  * con diferencia ≤ ventana. Importe y día iguales NO bastan para descartar: solo se advierte.
  */
 export function duplicateReason(
-  a: { amount: string | null; occurredOn: string | null; operationRef: string | null; accountId: string | null; channel?: string | null },
-  b: { amount: string | null; occurredOn: string | null; operationRef: string | null; accountId: string | null; channel?: string | null },
+  a: { amount: string | null; occurredOn: string | null; occurredTime?: string | null; operationRef: string | null; accountId: string | null; channel?: string | null },
+  b: { amount: string | null; occurredOn: string | null; occurredTime?: string | null; operationRef: string | null; accountId: string | null; channel?: string | null },
   windowDays = 1,
 ): 'operation_ref' | 'amount_account_window' | null {
   if (a.operationRef && b.operationRef && a.operationRef === b.operationRef) return 'operation_ref';
   if (!a.amount || !b.amount || a.amount !== b.amount || !a.occurredOn || !b.occurredOn) return null;
   const sameWhere = (a.accountId && b.accountId && a.accountId === b.accountId) || (a.channel && b.channel && a.channel.toLowerCase() === b.channel.toLowerCase());
-  return sameWhere && dayDistance(a.occurredOn, b.occurredOn) <= windowDays ? 'amount_account_window' : null;
+  if (!sameWhere) return null;
+  // Con hora en ambos, la ventana se mide en minutos (24 h reales); si falta alguna, por días.
+  if (a.occurredTime && b.occurredTime) return minutesApart(a.occurredOn, a.occurredTime, b.occurredOn, b.occurredTime) <= windowDays * 1440 ? 'amount_account_window' : null;
+  return dayDistance(a.occurredOn, b.occurredOn) <= windowDays ? 'amount_account_window' : null;
 }
 
 /** Qué falta para poder aceptar (RN-CA06). La categoría puede faltar. */

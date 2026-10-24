@@ -3,6 +3,7 @@ import { ExtractorError, type ExtractInput, type ExtractOutput, type Extractor }
 const AMOUNT = /(?:S\/\.?|PEN)\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)/i;
 const DMY = /\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/;
 const YMD = /\b(\d{4})-(\d{2})-(\d{2})\b/;
+const TIME = /\b(\d{1,2}):(\d{2})\s*(a\.?\s?m\.?|p\.?\s?m\.?)?/i;
 const INCOME = /recibiste|te (?:yapearon|plineron|enviaron|transfirieron)|abono|dep[oó]sito a tu/i;
 const OP_REF = /(?:operaci[oó]n|nro\.?|n[uú]mero|c[oó]digo)\D{0,12}(\d{5,})/i;
 const CHANNEL = /\b(yape|plin|bcp|bbva|interbank|scotiabank|tunki|agora)\b/i;
@@ -32,13 +33,22 @@ export function createHeuristicExtractor(): Extractor {
       const ymd = YMD.exec(t); const dmy = DMY.exec(t);
       if (ymd) occurredOn = ymd[0];
       else if (dmy) occurredOn = `${dmy[3]}-${dmy[2]!.padStart(2, '0')}-${dmy[1]!.padStart(2, '0')}`;
+      let occurredTime: string | null = null;
+      const tm = TIME.exec(t);
+      if (tm) {
+        let h = Number(tm[1]);
+        const pm = tm[3]?.toLowerCase().startsWith('p');
+        if (pm && h < 12) h += 12;
+        if (tm[3] && !pm && h === 12) h = 0;
+        if (h <= 23 && Number(tm[2]) <= 59) occurredTime = `${String(h).padStart(2, '0')}:${tm[2]}`;
+      }
       const who = WHO.exec(t.replace(/^.*?(?:S\/\.?\s*[\d.,]+)/i, ''));
       return {
         provider: 'heuristic', model: 'heuristic-1', usage,
         raw: {
           documentType: 'payment_receipt', isTransaction: true, confidence: 0.6,
           movements: [{
-            direction: INCOME.test(t) ? 'income' : 'expense', amount: toDecimal(a[1]!), currency: 'PEN', occurredOn,
+            direction: INCOME.test(t) ? 'income' : 'expense', amount: toDecimal(a[1]!), currency: 'PEN', occurredOn, occurredTime,
             counterparty: who?.[1] ?? null, channel: CHANNEL.exec(t)?.[1] ?? null, operationId: OP_REF.exec(t)?.[1] ?? null,
             concept: null, suggestedCategory: null, items: [],
           }],

@@ -24,6 +24,8 @@ export interface CreateOperationInput {
   goalDeductions?: Deduction[];
   /** …o se acepta que lo reservado quede por encima del saldo. */
   acceptReserveShortfall?: boolean;
+  /** Hora local HH:MM, opcional (comprobantes). */
+  time?: string | null;
   /** Procedencia del movimiento (captura por correo o foto). */
   source?: 'manual' | 'email' | 'photo';
 }
@@ -52,12 +54,12 @@ export function resolveDate(ctx: Ctx, date?: string) {
 /** Inserta una operación y sus asientos. Usado también por cobros y pagos al proveedor. */
 export async function insertOperation(
   ctx: Ctx,
-  o: { kind: 'income' | 'expense' | 'transfer' | 'adjustment'; date: number; description?: string; contactId?: string | null; categoryId?: string | null; source?: string; concept?: 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation' },
+  o: { kind: 'income' | 'expense' | 'transfer' | 'adjustment'; date: number; time?: string | null; description?: string; contactId?: string | null; categoryId?: string | null; source?: string; concept?: 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation' },
   entries: Array<{ accountId: string; amount: bigint }>,
 ) {
   const op = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
-    insert into financial_operation (owner_id, kind, occurred_on, description, contact_id, category_id, source, concept, created_by)
-    values (${ctx.ownerId}, ${o.kind}, ${formatISO(o.date)}, ${o.description ?? ''}, ${o.contactId ?? null}, ${o.categoryId ?? null}, ${o.source ?? 'manual'}, ${o.concept ?? 'ordinary'}, ${ctx.actorId})
+    insert into financial_operation (owner_id, kind, occurred_on, occurred_time, description, contact_id, category_id, source, concept, created_by)
+    values (${ctx.ownerId}, ${o.kind}, ${formatISO(o.date)}, ${o.time ?? null}, ${o.description ?? ''}, ${o.contactId ?? null}, ${o.categoryId ?? null}, ${o.source ?? 'manual'}, ${o.concept ?? 'ordinary'}, ${ctx.actorId})
     returning id`);
   for (const e of entries) {
     await sql`insert into account_entry (owner_id, operation_id, account_id, amount) values (${ctx.ownerId}, ${op!.id}, ${e.accountId}, ${formatMoney(e.amount)})`.execute(ctx.trx);
@@ -96,7 +98,7 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
       }
     }
   }
-  const id = await insertOperation(ctx, { kind: i.kind, date, description: i.description, contactId: i.contactId, categoryId: i.categoryId, source: i.source }, entries);
+  const id = await insertOperation(ctx, { kind: i.kind, date, time: i.time, description: i.description, contactId: i.contactId, categoryId: i.categoryId, source: i.source }, entries);
   if (deductions.length > 0) await applyDeductions(ctx, i.accountId, id, deductions);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: `operation.${i.kind}`, entityType: 'financial_operation', entityId: id, changes: { amount: formatMoney(amount) } });
   // Sin categoría elegida, mandan las reglas del usuario (RN-CL04): `assign` la fija y `suggest` solo la propone.
@@ -110,8 +112,8 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
 }
 
 export async function getOperation(ctx: Ctx, id: string) {
-  const op = await one<{ id: string; kind: string; occurred_on: string; description: string; status: string; reversal_of_id: string | null; reason: string | null; version: number; created_at: unknown; contact_id: string | null; category_id: string | null; category_name: string | null; concept: string }>(
-    ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, o.concept, c.name as category_name
+  const op = await one<{ id: string; kind: string; occurred_on: string; description: string; status: string; reversal_of_id: string | null; reason: string | null; version: number; created_at: unknown; contact_id: string | null; category_id: string | null; category_name: string | null; concept: string; occurred_time: string | null }>(
+    ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.occurred_time, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, o.concept, c.name as category_name
       from financial_operation o left join category c on c.id = o.category_id and c.owner_id = o.owner_id where o.owner_id = ${ctx.ownerId} and o.id = ${id}`);
   if (!op) throw notFound('Operation');
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
@@ -122,7 +124,7 @@ export async function getOperation(ctx: Ctx, id: string) {
            (select id from refund where operation_id = ${id}) as refund_id`);
   return {
     links: { receiptId: links?.receipt_id ?? null, supplierPaymentId: links?.supplier_payment_id ?? null, refundId: links?.refund_id ?? null },
-    id: op.id, kind: op.kind, occurredOn: op.occurred_on, description: op.description, status: op.status,
+    id: op.id, kind: op.kind, occurredOn: op.occurred_on, occurredTime: op.occurred_time ? op.occurred_time.slice(0, 5) : null, description: op.description, status: op.status,
     reversalOfId: op.reversal_of_id, reason: op.reason, version: op.version, createdAt: ts(op.created_at),
     concept: op.concept, contactId: op.contact_id, category: op.category_id ? { id: op.category_id, name: op.category_name } : null, classificationTrail: await decisionsOf(ctx, id),
     entries: es.map((e) => ({ accountId: e.account_id, amount: formatMoney(parseMoney(e.amount, { allowNegative: true })) })),

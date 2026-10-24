@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contentHash, dayDistance, duplicateReason, extractionSchema, inboxAddressFor, missingForAccept } from '../../src/domain/capture.js';
+import { contentHash, dayDistance, duplicateReason, extractionSchema, inboxAddressFor, minutesApart, missingForAccept } from '../../src/domain/capture.js';
 
 describe('Dirección de recepción (07 §3)', () => {
   it('tiene el formato gastos.{nombre}-{hash3}@dominio y es estable', () => {
@@ -66,5 +66,26 @@ describe('Esquema de extracción (07 §6)', () => {
   it('rechaza tipos de documento o direcciones desconocidos', () => {
     expect(extractionSchema.safeParse({ ...valid, documentType: 'invoice' }).success).toBe(false);
     expect(extractionSchema.safeParse({ ...valid, movements: [{ ...valid.movements[0], direction: 'refund' }] }).success).toBe(false);
+  });
+});
+
+describe('Hora del movimiento', () => {
+  it('minutesApart mide minutos reales entre fecha y hora', () => {
+    expect(minutesApart('2026-10-10', '23:30', '2026-10-11', '00:10')).toBe(40);
+    expect(minutesApart('2026-10-10', '09:00', '2026-10-11', '10:00')).toBe(1500);
+  });
+  it('con hora en ambos, la ventana es de 24 h reales y no de 1 día de calendario', () => {
+    const base = { amount: '10.00', occurredOn: '2026-10-10', occurredTime: '09:00', operationRef: null, accountId: 'a1', channel: null };
+    expect(duplicateReason(base, { ...base, occurredOn: '2026-10-11', occurredTime: '08:59' })).toBe('amount_account_window');
+    expect(duplicateReason(base, { ...base, occurredOn: '2026-10-11', occurredTime: '09:01' })).toBeNull(); // 24 h y 1 min
+    expect(duplicateReason(base, { ...base, occurredOn: '2026-10-11', occurredTime: null })).toBe('amount_account_window'); // sin hora: por días
+  });
+  it('el esquema acepta HH:MM y HH:MM:SS (recortada) y rechaza horas inexistentes', () => {
+    const mv = { direction: 'expense', amount: '1.00' };
+    const ok = (t: unknown) => extractionSchema.safeParse({ documentType: 'other', isTransaction: true, movements: [{ ...mv, occurredTime: t }] });
+    expect((ok('17:32') as any).data.movements[0].occurredTime).toBe('17:32');
+    expect((ok('17:32:10') as any).data.movements[0].occurredTime).toBe('17:32');
+    expect(ok('25:00').success).toBe(false);
+    expect(ok('5:32 pm').success).toBe(false);
   });
 });

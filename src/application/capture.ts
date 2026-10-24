@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
-import { contentHash, duplicateReason, extractionSchema, inboxAddressFor, missingForAccept, type ExtractedMovement } from '../domain/capture.js';
+import { contentHash, duplicateReason, extractionSchema, inboxAddressFor, minutesApart, missingForAccept, type ExtractedMovement } from '../domain/capture.js';
 import { formatISO } from '../domain/localDate.js';
 import { formatMoney, parseMoney } from '../domain/money.js';
 import { conflict, notFound, unprocessable } from '../http/errors.js';
@@ -223,8 +223,8 @@ async function createProposal(ctx: Ctx, docId: string, mv: ExtractedMovement, co
   const description = [mv.counterparty, mv.concept].filter(Boolean).join(' · ') || null;
   const draft = { direction: mv.direction, amount: mv.amount, occurredOn: mv.occurredOn, accountId: pre.accountId, toAccountId: null, currency: mv.currency.toUpperCase() };
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
-    insert into movement_proposal (owner_id, document_id, direction, amount, currency, occurred_on, counterparty, channel, operation_ref, concept, suggested_category, items, account_id, category_id, contact_id, description, missing, warnings, confidence)
-    values (${ctx.ownerId}, ${docId}, ${mv.direction}, ${mv.amount}, ${draft.currency}, ${mv.occurredOn}, ${mv.counterparty}, ${mv.channel}, ${mv.operationId}, ${mv.concept}, ${mv.suggestedCategory}, ${JSON.stringify(mv.items)}::jsonb,
+    insert into movement_proposal (owner_id, document_id, direction, amount, currency, occurred_on, occurred_time, counterparty, channel, operation_ref, concept, suggested_category, items, account_id, category_id, contact_id, description, missing, warnings, confidence)
+    values (${ctx.ownerId}, ${docId}, ${mv.direction}, ${mv.amount}, ${draft.currency}, ${mv.occurredOn}, ${mv.occurredTime}, ${mv.counterparty}, ${mv.channel}, ${mv.operationId}, ${mv.concept}, ${mv.suggestedCategory}, ${JSON.stringify(mv.items)}::jsonb,
       ${pre.accountId}, ${pre.categoryId}, ${pre.contactId}, ${description}, ${JSON.stringify(missingForAccept(draft))}::jsonb, ${JSON.stringify(warnings)}::jsonb, ${confidence}) returning id`);
   await refreshDuplicates(ctx, r!.id);
   return r!.id;
@@ -271,12 +271,12 @@ export async function readFile(ctx: Ctx, deps: CaptureDeps, id: string) {
 // ───────────────────────── Propuestas ─────────────────────────
 
 interface PropRow {
-  id: string; document_id: string; status: string; direction: 'income' | 'expense' | 'transfer'; amount: string | null; currency: string; occurred_on: string | null; counterparty: string | null; channel: string | null;
+  id: string; document_id: string; status: string; direction: 'income' | 'expense' | 'transfer'; amount: string | null; currency: string; occurred_on: string | null; occurred_time: string | null; counterparty: string | null; channel: string | null;
   operation_ref: string | null; concept: string | null; suggested_category: string | null; items: unknown; account_id: string | null; to_account_id: string | null; category_id: string | null; contact_id: string | null;
   description: string | null; missing: string[]; warnings: string[]; confidence: string | null; operation_id: string | null; version: number; doc_origin: string; doc_sender: string | null; doc_subject: string | null; created_at: unknown;
 }
 const propSel = sql`
-  select p.id, p.document_id, p.status, p.direction, p.amount, p.currency, p.occurred_on, p.counterparty, p.channel, p.operation_ref, p.concept, p.suggested_category, p.items, p.account_id, p.to_account_id,
+  select p.id, p.document_id, p.status, p.direction, p.amount, p.currency, p.occurred_on, p.occurred_time, p.counterparty, p.channel, p.operation_ref, p.concept, p.suggested_category, p.items, p.account_id, p.to_account_id,
          p.category_id, p.contact_id, p.description, p.missing, p.warnings, p.confidence, p.operation_id, p.version, p.created_at, d.origin as doc_origin, d.sender as doc_sender, d.subject as doc_subject
   from movement_proposal p join source_document d on d.id = p.document_id and d.owner_id = p.owner_id`;
 
@@ -288,7 +288,7 @@ async function duplicatesOf(ctx: Ctx, proposalId: string) {
 async function proposalView(ctx: Ctx, p: PropRow) {
   const dups = p.status === 'pending' ? await duplicatesOf(ctx, p.id) : [];
   return {
-    id: p.id, documentId: p.document_id, status: p.status, direction: p.direction, amount: p.amount === null ? null : m(p.amount), currency: p.currency, occurredOn: p.occurred_on,
+    id: p.id, documentId: p.document_id, status: p.status, direction: p.direction, amount: p.amount === null ? null : m(p.amount), currency: p.currency, occurredOn: p.occurred_on, occurredTime: p.occurred_time ? p.occurred_time.slice(0, 5) : null,
     counterparty: p.counterparty, channel: p.channel, operationRef: p.operation_ref, concept: p.concept, suggestedCategory: p.suggested_category, items: p.items,
     accountId: p.account_id, toAccountId: p.to_account_id, categoryId: p.category_id, contactId: p.contact_id, description: p.description,
     missing: p.missing, warnings: p.warnings, confidence: p.confidence === null ? null : Number(p.confidence), canAccept: p.status === 'pending' && p.missing.length === 0,
@@ -309,12 +309,13 @@ async function refreshDuplicates(ctx: Ctx, id: string) {
   await sql`update movement_proposal set missing = ${JSON.stringify(missingForAccept({ direction: p.direction, amount: p.amount, occurredOn: p.occurred_on, accountId: p.account_id, toAccountId: p.to_account_id, currency: p.currency }))}::jsonb where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await sql`delete from duplicate_candidate where owner_id = ${ctx.ownerId} and proposal_id = ${id}`.execute(ctx.trx);
   if (p.status !== 'pending') return;
-  const me = { amount: p.amount === null ? null : m(p.amount), occurredOn: p.occurred_on, operationRef: p.operation_ref, accountId: p.account_id, channel: p.channel };
+  const hm = (t: string | null) => (t ? t.slice(0, 5) : null);
+  const me = { amount: p.amount === null ? null : m(p.amount), occurredOn: p.occurred_on, occurredTime: hm(p.occurred_time), operationRef: p.operation_ref, accountId: p.account_id, channel: p.channel };
 
   // Otras propuestas (de otro documento) pendientes o ya aceptadas.
   const others = await rows<PropRow>(ctx.trx, sql<PropRow>`${propSel} where p.owner_id = ${ctx.ownerId} and p.id <> ${id} and p.document_id <> ${p.document_id} and p.status in ('pending','accepted','linked')`);
   for (const o of others) {
-    const why = duplicateReason(me, { amount: o.amount === null ? null : m(o.amount), occurredOn: o.occurred_on, operationRef: o.operation_ref, accountId: o.account_id, channel: o.channel }, DUP_WINDOW_DAYS);
+    const why = duplicateReason(me, { amount: o.amount === null ? null : m(o.amount), occurredOn: o.occurred_on, occurredTime: hm(o.occurred_time), operationRef: o.operation_ref, accountId: o.account_id, channel: o.channel }, DUP_WINDOW_DAYS);
     if (!why) continue;
     // Si la otra ya generó un movimiento, la coincidencia es con ese movimiento.
     if (o.operation_id) await sql`insert into duplicate_candidate (owner_id, proposal_id, operation_id, reason) values (${ctx.ownerId}, ${id}, ${o.operation_id}, ${why})`.execute(ctx.trx);
@@ -322,13 +323,15 @@ async function refreshDuplicates(ctx: Ctx, id: string) {
   }
   // Movimientos ya registrados con el mismo importe en la misma cuenta dentro de la ventana.
   if (p.amount && p.occurred_on && p.account_id && p.direction !== 'transfer') {
-    const ops = await rows<{ id: string }>(ctx.trx, sql<{ id: string }>`
-      select o.id from financial_operation o join account_entry e on e.owner_id = o.owner_id and e.operation_id = o.id
+    const found = await rows<{ id: string; occurred_on: string; occurred_time: string | null }>(ctx.trx, sql<{ id: string; occurred_on: string; occurred_time: string | null }>`
+      select o.id, o.occurred_on, o.occurred_time from financial_operation o join account_entry e on e.owner_id = o.owner_id and e.operation_id = o.id
       where o.owner_id = ${ctx.ownerId} and o.kind = ${p.direction} and o.status = 'confirmed' and e.account_id = ${p.account_id} and abs(e.amount) = ${m(p.amount)}::numeric
         and o.occurred_on between (${p.occurred_on}::date - ${DUP_WINDOW_DAYS}::int) and (${p.occurred_on}::date + ${DUP_WINDOW_DAYS}::int)
         and not exists (select 1 from movement_proposal q where q.owner_id = o.owner_id and q.operation_id = o.id and q.document_id = ${p.document_id})
         and not exists (select 1 from duplicate_candidate d where d.owner_id = o.owner_id and d.proposal_id = ${id} and d.operation_id = o.id)
-      order by o.occurred_on desc, o.id limit 5`);
+      order by o.occurred_on desc, o.id limit 20`);
+    // Con hora en ambos lados la ventana es de 24 h reales; sin hora, de ±1 día.
+    const ops = found.filter((o) => !p.occurred_time || !o.occurred_time || minutesApart(p.occurred_on!, p.occurred_time.slice(0, 5), o.occurred_on, o.occurred_time.slice(0, 5)) <= DUP_WINDOW_DAYS * 1440).slice(0, 5);
     for (const o of ops) await sql`insert into duplicate_candidate (owner_id, proposal_id, operation_id, reason) values (${ctx.ownerId}, ${id}, ${o.id}, 'amount_account_window')`.execute(ctx.trx);
   }
 }
@@ -343,7 +346,7 @@ export async function getProposal(ctx: Ctx, id: string) {
 }
 
 export interface ProposalPatch {
-  direction?: 'income' | 'expense' | 'transfer'; amount?: string | null; occurredOn?: string | null; accountId?: string | null; toAccountId?: string | null;
+  direction?: 'income' | 'expense' | 'transfer'; amount?: string | null; occurredOn?: string | null; occurredTime?: string | null; accountId?: string | null; toAccountId?: string | null;
   categoryId?: string | null; contactId?: string | null; description?: string | null;
 }
 
@@ -360,6 +363,7 @@ export async function patchProposal(ctx: Ctx, id: string, version: number, i: Pr
     direction: i.direction ?? p.direction,
     amount: has('amount') ? (i.amount ? m(i.amount) : null) : p.amount,
     occurred_on: has('occurredOn') ? i.occurredOn ?? null : p.occurred_on,
+    occurred_time: has('occurredTime') ? i.occurredTime ?? null : p.occurred_time,
     account_id: has('accountId') ? i.accountId ?? null : p.account_id,
     to_account_id: has('toAccountId') ? i.toAccountId ?? null : p.to_account_id,
     category_id: has('categoryId') ? i.categoryId ?? null : p.category_id,
@@ -367,7 +371,7 @@ export async function patchProposal(ctx: Ctx, id: string, version: number, i: Pr
     description: has('description') ? i.description?.trim() || null : p.description,
   };
   await sql`
-    update movement_proposal set direction = ${next.direction}, amount = ${next.amount}, occurred_on = ${next.occurred_on}, account_id = ${next.account_id}, to_account_id = ${next.to_account_id},
+    update movement_proposal set direction = ${next.direction}, amount = ${next.amount}, occurred_on = ${next.occurred_on}, occurred_time = ${next.occurred_time}, account_id = ${next.account_id}, to_account_id = ${next.to_account_id},
       category_id = ${next.category_id}, contact_id = ${next.contact_id}, description = ${next.description}
     where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await refreshDuplicates(ctx, id);
@@ -407,7 +411,7 @@ export async function acceptProposal(ctx: Ctx, id: string, i: AcceptInput) {
 
   const doc = await loadDoc(ctx, p.document_id);
   const op = await createOperation(ctx, {
-    kind: p.direction, accountId: p.account_id!, ...(p.direction === 'transfer' ? { toAccountId: p.to_account_id! } : {}), amount: m(p.amount!), date: p.occurred_on!,
+    kind: p.direction, accountId: p.account_id!, ...(p.direction === 'transfer' ? { toAccountId: p.to_account_id! } : {}), amount: m(p.amount!), date: p.occurred_on!, time: p.occurred_time ? p.occurred_time.slice(0, 5) : null,
     description: p.description ?? '', categoryId: p.category_id, contactId: p.contact_id, source: SOURCE_OF[doc.origin as keyof typeof SOURCE_OF],
     ...(i.goalDeductions ? { goalDeductions: i.goalDeductions } : {}), ...(i.acceptReserveShortfall ? { acceptReserveShortfall: true } : {}),
   });

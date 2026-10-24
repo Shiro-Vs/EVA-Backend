@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const uuid = z.uuid();
+export const isoTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Se espera HH:MM (24 horas)');
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Se espera YYYY-MM-DD');
 /** Importe positivo con hasta 2 decimales, como cadena (13 §1). */
 export const money = z.string().regex(/^\d+(\.\d{1,2})?$/, 'Importe inválido: use una cadena decimal como "20.00"');
@@ -37,6 +38,7 @@ export const operationCreate = z.object({
   toAccountId: uuid.optional(),
   amount: money,
   date: isoDate.optional(),
+  time: isoTime.optional(),
   description: z.string().trim().max(200).optional(),
   categoryId: uuid.nullish(),
   contactId: uuid.nullish(),
@@ -324,7 +326,7 @@ export const captureInboundEmail = z.object({
 export const captureDocsQuery = z.object({ status: z.enum(['received', 'proposed', 'failed', 'discarded', 'no_transaction']).optional() });
 export const captureProposalsQuery = z.object({ status: z.enum(['pending', 'accepted', 'linked', 'discarded']).default('pending') });
 export const proposalPatch = z.object({
-  direction: z.enum(['income', 'expense', 'transfer']).optional(), amount: money.nullable().optional(), occurredOn: isoDate.nullable().optional(),
+  direction: z.enum(['income', 'expense', 'transfer']).optional(), amount: money.nullable().optional(), occurredOn: isoDate.nullable().optional(), occurredTime: isoTime.nullable().optional(),
   accountId: uuid.nullable().optional(), toAccountId: uuid.nullable().optional(), categoryId: uuid.nullable().optional(), contactId: uuid.nullable().optional(),
   description: z.string().trim().max(200).nullable().optional(),
 }).strict();

@@ -155,6 +155,42 @@ describe('Captura de texto → propuesta → aceptar (RN-CA01…CA03, CA06)', ()
   });
 });
 
+describe('Hora y nombre incompleto', () => {
+  it('guarda la hora y el asterisco de Yape; la hora llega al movimiento aceptado', async () => {
+    const x = scripted([receipt({ counterparty: 'Julia Tra*', occurredTime: '17:32:00', occurredOn: '2026-10-10' })]);
+    const a = makeApi({ extractor: x });
+    a.setNow(new Date('2026-10-12T17:00:00Z'));
+    const u = await a.newUser();
+    const bcp = await createAccount(a, u.token, 'BCP', '1000.00');
+    const r = await a.post(u.token, '/capture/documents', { origin: 'text', text: 'x' });
+    const p = r.body.proposals[0];
+    expect(p).toMatchObject({ counterparty: 'Julia Tra*', occurredTime: '17:32', description: 'Julia Tra*' });
+    const edited = await a.patch(u.token, `/capture/proposals/${p.id}`, { accountId: bcp.id }, p.version);
+    const pv = await a.post(u.token, `/capture/proposals/${p.id}/preview`);
+    const ok = await a.post(u.token, `/capture/proposals/${p.id}/accept`, { previewToken: pv.body.previewToken });
+    expect(edited.status).toBe(200);
+    expect(ok.body.operation).toMatchObject({ occurredOn: '2026-10-10', occurredTime: '17:32' });
+    expect((await a.get(u.token, `/operations/${ok.body.operation.id}`)).body.occurredTime).toBe('17:32');
+    // La hora se puede corregir o quitar en la propuesta y en un movimiento manual.
+    const manual = await a.post(u.token, '/operations', { kind: 'expense', accountId: bcp.id, amount: '3.00', date: '2026-10-10', time: '08:05' });
+    expect(manual.body.occurredTime).toBe('08:05');
+    expect((await a.post(u.token, '/operations', { kind: 'expense', accountId: bcp.id, amount: '3.00', time: '25:61' })).status).toBe(422);
+    await a.app.close();
+  });
+
+  it('dos pagos iguales con horas distintas por más de 24 h no se tratan como duplicados', async () => {
+    const x = scripted([receipt({ occurredOn: '2026-10-11', occurredTime: '12:00' })]);
+    const a = makeApi({ extractor: x });
+    a.setNow(new Date('2026-10-12T17:00:00Z'));
+    const u = await a.newUser();
+    const bcp = await createAccount(a, u.token, 'BCP', '1000.00');
+    await a.post(u.token, '/operations', { kind: 'expense', accountId: bcp.id, amount: '25.50', date: '2026-10-10', time: '09:00' });
+    const p = (await a.post(u.token, '/capture/documents', { origin: 'text', text: 'a' })).body.proposals[0];
+    expect((await a.patch(u.token, `/capture/proposals/${p.id}`, { accountId: bcp.id }, p.version)).body.duplicates).toEqual([]); // 27 h
+    await a.app.close();
+  });
+});
+
 describe('Posibles duplicados entre operaciones (RN-DU02…DU04, D-23)', () => {
   it('advierte de un gasto manual igual, exige confirmar y permite vincular sin crear otro', async () => {
     const { u, bcp } = await world();
