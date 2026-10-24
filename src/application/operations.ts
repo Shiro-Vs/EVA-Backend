@@ -50,7 +50,7 @@ export function resolveDate(ctx: Ctx, date?: string) {
 /** Inserta una operación y sus asientos. Usado también por cobros y pagos al proveedor. */
 export async function insertOperation(
   ctx: Ctx,
-  o: { kind: 'income' | 'expense' | 'transfer'; date: number; description?: string; contactId?: string | null; categoryId?: string | null; source?: string; concept?: 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation' },
+  o: { kind: 'income' | 'expense' | 'transfer' | 'adjustment'; date: number; description?: string; contactId?: string | null; categoryId?: string | null; source?: string; concept?: 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation' },
   entries: Array<{ accountId: string; amount: bigint }>,
 ) {
   const op = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`

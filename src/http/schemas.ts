@@ -156,6 +156,26 @@ export const lateFeeBody = z.object({ mode: z.enum(['fixed', 'percent']), amount
 export const lateFeeCreate = lateFeeBody.extend({ previewToken: z.string().min(10) }).strict();
 export const tokenOnly = z.object({ previewToken: z.string().min(10) }).strict();
 
+export const recurringCreate = z.object({
+  name: text(80), kind: z.enum(['income', 'expense']), accountId: uuid, amount: money, categoryId: uuid.nullish(), contactId: uuid.nullish(), description: z.string().trim().max(200).optional(),
+  interval: intervalSchema, startDate: isoDate, endDate: isoDate.nullish(),
+}).strict();
+export const recurringPatch = z.object({
+  name: text(80).optional(), accountId: uuid.optional(), amount: money.optional(), categoryId: uuid.nullish(), contactId: uuid.nullish(), description: z.string().trim().max(200).optional(),
+  interval: intervalSchema.optional(), startDate: isoDate.optional(), endDate: isoDate.nullish(),
+}).strict();
+export const recurringListQuery = z.object({ status: z.enum(['active', 'paused', 'archived']).default('active') });
+export const recurringPendingQuery = z.object({ within: z.coerce.number().int().min(0).max(90).default(7) });
+export const occurrenceConfirm = z.object({
+  amount: money.optional(), accountId: uuid.optional(), date: isoDate.optional(), description: z.string().trim().max(200).optional(), categoryId: uuid.nullish(),
+  goalDeductions: z.array(z.object({ goalId: uuid, amount: money }).strict()).max(20).optional(), acceptReserveShortfall: z.boolean().optional(),
+}).strict();
+export const occurrenceSkip = z.object({ note: z.string().trim().max(200).optional() }).strict();
+export const occurrenceLink = z.object({ operationId: uuid }).strict();
+
+export const reconcileBody = z.object({ realBalance: signedMoney, asOf: isoDate.optional() }).strict();
+export const reconcileCreate = reconcileBody.extend({ reason: z.string().trim().max(200).optional(), previewToken: z.string().min(10) }).strict();
+
 export const goalCreate = z.object({ name: text(80), targetAmount: money, targetDate: isoDate.nullish(), icon: optText(40), color: optText(20), note: optText(200) }).strict();
 export const goalPatch = z.object({ name: text(80).optional(), targetAmount: money.optional(), targetDate: isoDate.nullish(), icon: optText(40), color: optText(20), note: optText(200) }).strict();
 export const goalMoney = z.object({ accountId: uuid, amount: money, note: z.string().trim().max(200).optional() }).strict();

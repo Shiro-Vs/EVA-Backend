@@ -4,6 +4,7 @@ import { formatMoney, parseMoney } from '../domain/money.js';
 import { one, rows } from '../infra/db/db.js';
 import type { Ctx } from './context.js';
 import { ledgerTotals } from './loanLedger.js';
+import { syncRecurring } from './recurring.js';
 import { syncAllSubscriptions } from './sync.js';
 
 const m = (v: string | null | undefined) => formatMoney(parseMoney(v ?? '0', { allowNegative: true }));
@@ -46,11 +47,14 @@ export async function summary(ctx: Ctx) {
     order by fo.occurred_on desc, fo.created_at desc, ae.amount desc, ae.id desc limit 8`);
 
   const loans = await ledgerTotals(ctx);
+  await syncRecurring(ctx);
+  const rec2 = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from expected_occurrence where owner_id = ${ctx.ownerId} and status = 'pending'`);
   return {
     asOf: today,
     balance: { net: m(bal?.net), accounts: Number(bal?.n ?? 0) },
     receivable: { pending: m(rec?.pending), overdue: m(rec?.overdue), debtors: Number(rec?.debtors ?? 0), creditFree: m(credit?.free), creditReserved: m(credit?.reserved) },
     subscriptions: { active: Number(subs?.active ?? 0), currentCycleTotal: m(subs?.total) },
+    recurring: { pending: Number(rec2?.n ?? 0) }, // ocurrencias por decidir (nada se registra solo)
     loans, // préstamos del libro: por cobrar (otorgados) y por pagar (recibidos)
     recent: recent.map((r) => ({
       id: r.id, operationId: r.operation_id, kind: r.kind, status: r.op_status, occurredOn: r.occurred_on, description: r.description,

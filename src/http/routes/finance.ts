@@ -6,6 +6,8 @@ import * as categories from '../../application/categories.js';
 import * as classification from '../../application/classification.js';
 import * as goals from '../../application/goals.js';
 import * as ledger from '../../application/loanLedger.js';
+import * as reconciliation from '../../application/reconciliation.js';
+import * as recurring from '../../application/recurring.js';
 import * as operations from '../../application/operations.js';
 import { ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -18,6 +20,72 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations', async (req) => {
     const q = parse(s.operationListQuery, req.query);
     return withCtx(deps, req, (ctx) => operations.listOperations(ctx, { ...q, offset: s.decodeCursor(q.cursor) }));
+  });
+
+  // ---------- Conciliación ----------
+  app.post('/accounts/:id/reconciliation/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reconcileBody, req.body);
+    return withCtx(deps, req, (ctx) => reconciliation.previewReconciliation(ctx, id, body));
+  });
+  app.post('/accounts/:id/reconciliation', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reconcileCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /accounts/${id}/reconciliation`, body, async (ctx) => ({ status: 201, body: await reconciliation.reconcile(ctx, id, body) }));
+  });
+  app.get('/accounts/:id/reconciliations', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => reconciliation.listReconciliations(ctx, id)) };
+  });
+
+  // ---------- Recurrencias ----------
+  app.get('/recurring/templates', async (req) => {
+    const q = parse(s.recurringListQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => recurring.listTemplates(ctx, q.status)) };
+  });
+  app.post('/recurring/templates', async (req, reply) => {
+    const body = parse(s.recurringCreate, req.body);
+    reply.code(201);
+    return withCtx(deps, req, (ctx) => recurring.createTemplate(ctx, body));
+  });
+  app.get('/recurring/templates/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => recurring.getTemplate(ctx, id));
+  });
+  app.patch('/recurring/templates/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.recurringPatch, req.body);
+    const version = ifMatch(req);
+    return withCtx(deps, req, (ctx) => recurring.patchTemplate(ctx, id, version, body));
+  });
+  for (const [path, status] of [['pause', 'paused'], ['resume', 'active'], ['archive', 'archived']] as const) {
+    app.post(`/recurring/templates/:id/${path}`, async (req) => {
+      const { id } = parse(idParam, req.params);
+      return withCtx(deps, req, (ctx) => recurring.setTemplateStatus(ctx, id, status));
+    });
+  }
+  app.get('/recurring/pending', async (req) => {
+    const q = parse(s.recurringPendingQuery, req.query);
+    return withCtx(deps, req, (ctx) => recurring.pending(ctx, q.within));
+  });
+  app.post('/recurring/occurrences/:id/confirm', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.occurrenceConfirm, req.body);
+    return withIdempotency(deps, req, reply, `POST /recurring/occurrences/${id}/confirm`, body, async (ctx) => ({ status: 200, body: await recurring.confirmOccurrence(ctx, id, body) }));
+  });
+  app.post('/recurring/occurrences/:id/skip', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.occurrenceSkip, req.body);
+    return withCtx(deps, req, (ctx) => recurring.skipOccurrence(ctx, id, body.note));
+  });
+  app.post('/recurring/occurrences/:id/link', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.occurrenceLink, req.body);
+    return withCtx(deps, req, (ctx) => recurring.linkOccurrence(ctx, id, body.operationId));
+  });
+  app.post('/recurring/occurrences/:id/reopen', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => recurring.reopenOccurrence(ctx, id));
   });
 
   // ---------- Metas de ahorro ----------
