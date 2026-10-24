@@ -301,3 +301,41 @@ export const receiptCreate = receiptBody.extend({ previewToken: z.string().min(1
 export const supplierBody = z.object({ accountId: uuid, amount: money, paidOn: isoDate.optional(), note: z.string().trim().max(200).optional() }).strict();
 export const reasonBody = z.object({ reason: z.string().trim().min(1).max(200) }).strict();
 export const moveBody = z.object({ subscriptionId: uuid }).strict();
+
+// ---------- Captura asistida (Entrega 4) ----------
+export const captureDocumentCreate = z.object({
+  origin: z.enum(['photo', 'pdf', 'text']),
+  mime: z.string().trim().min(3).max(100).optional(),
+  filename: z.string().trim().max(200).optional(),
+  contentBase64: z.string().min(4).optional(),
+  text: z.string().trim().min(1).max(100_000).optional(),
+  subject: z.string().trim().max(200).optional(),
+  sender: z.string().trim().max(200).optional(),
+}).strict().refine((v) => v.contentBase64 || v.text, { message: 'Envía el archivo (contentBase64) o el texto', path: ['contentBase64'] })
+  .refine((v) => v.origin === 'text' || v.contentBase64, { message: 'Una foto o PDF requiere contentBase64', path: ['contentBase64'] });
+export const captureInboundEmail = z.object({
+  to: z.string().trim().min(3).max(200),
+  from: z.string().trim().max(200).optional(),
+  subject: z.string().trim().max(300).optional(),
+  text: z.string().max(200_000).optional(),
+  messageId: z.string().trim().max(300).optional(),
+  attachments: z.array(z.object({ filename: z.string().max(200).optional(), mime: z.string().max(100), contentBase64: z.string().min(4) }).strict()).max(10).optional(),
+}).strict();
+export const captureDocsQuery = z.object({ status: z.enum(['received', 'proposed', 'failed', 'discarded', 'no_transaction']).optional() });
+export const captureProposalsQuery = z.object({ status: z.enum(['pending', 'accepted', 'linked', 'discarded']).default('pending') });
+export const proposalPatch = z.object({
+  direction: z.enum(['income', 'expense', 'transfer']).optional(), amount: money.nullable().optional(), occurredOn: isoDate.nullable().optional(),
+  accountId: uuid.nullable().optional(), toAccountId: uuid.nullable().optional(), categoryId: uuid.nullable().optional(), contactId: uuid.nullable().optional(),
+  description: z.string().trim().max(200).nullable().optional(),
+}).strict();
+export const proposalAccept = z.object({
+  previewToken: z.string().min(10), acknowledgeDuplicates: z.boolean().optional(),
+  goalDeductions: z.array(z.object({ goalId: uuid, amount: money }).strict()).max(20).optional(), acceptReserveShortfall: z.boolean().optional(),
+}).strict();
+export const proposalBatch = z.object({
+  items: z.array(z.object({ id: uuid, previewToken: z.string().min(10), acknowledgeDuplicates: z.boolean().optional() }).strict()).min(1).max(50),
+}).strict();
+export const proposalLink = z.object({ operationId: uuid }).strict();
+export const proposalUndo = z.object({ reason: text(200) }).strict();
+export const senderRuleCreate = z.object({ sender: text(200), accountId: uuid.nullish(), categoryId: uuid.nullish(), contactId: uuid.nullish() }).strict();
+export const capturePurge = z.object({ olderThanDays: z.number().int().min(1).max(3650).optional() }).strict();

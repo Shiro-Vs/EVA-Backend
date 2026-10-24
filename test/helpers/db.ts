@@ -160,5 +160,5 @@ export async function allocate(c: pg.PoolClient, owner: string, receipt: string,
 }
 
 export const DEV_SECRET = 'test-secret-test-secret-test-secret-123';
-export const testEnv = () =>
-  loadEnv({ DATABASE_URL: process.env.TEST_DATABASE_URL, AUTH_MODE: 'dev', AUTH_DEV_SECRET: DEV_SECRET, LOG_LEVEL: 'silent' });
+export const testEnv = (over: Record<string, string> = {}) =>
+  loadEnv({ DATABASE_URL: process.env.TEST_DATABASE_URL, AUTH_MODE: 'dev', AUTH_DEV_SECRET: DEV_SECRET, LOG_LEVEL: 'silent', ...over });

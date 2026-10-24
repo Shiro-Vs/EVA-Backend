@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { createMemoryStore } from '../../src/infra/capture/files.js';
+import type { Extractor, FileStore } from '../../src/infra/capture/ports.js';
 import { buildApp } from '../../src/http/app.js';
 import { signDevToken } from '../../src/infra/auth/auth.js';
 import { DEV_SECRET, pool, testEnv } from './db.js';
@@ -21,9 +23,9 @@ export interface Api {
 export interface Req { method: 'GET' | 'POST' | 'PATCH'; url: string; token?: string; body?: unknown; headers?: Record<string, string> }
 export interface Res { status: number; body: any; headers: Record<string, any> }
 
-export function makeApi(): Api {
+export function makeApi(opts: { extractor?: Extractor; files?: FileStore; env?: Record<string, string> } = {}): Api {
   let now = REF_NOW;
-  const app = buildApp({ pool, env: testEnv(), now: () => now, logLevel: 'silent' });
+  const app = buildApp({ pool, env: testEnv(opts.env), now: () => now, logLevel: 'silent', extractor: opts.extractor, files: opts.files ?? createMemoryStore() });
 
   const call = async (o: Req): Promise<Res> => {
     const res = await app.inject({

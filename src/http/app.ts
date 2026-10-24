@@ -3,10 +3,15 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Env } from '../config/env.js';
 import { createAuthenticator, signDevToken, type Authenticator } from '../infra/auth/auth.js';
+import { createDiskStore } from '../infra/capture/files.js';
+import { createGeminiExtractor } from '../infra/capture/gemini.js';
+import { createHeuristicExtractor, createUnavailableExtractor } from '../infra/capture/heuristic.js';
+import type { Extractor, FileStore } from '../infra/capture/ports.js';
 import { createKysely } from '../infra/db/db.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
+import { captureRoutes, inboundRoutes } from './routes/capture.js';
 import { coreRoutes } from './routes/core.js';
 import { financeRoutes } from './routes/finance.js';
 import { seatRoutes } from './routes/seats.js';
@@ -24,12 +29,15 @@ export interface AppDeps {
   now?: () => Date; // reloj inyectable: ninguna regla lee la hora del sistema (14 §1)
   authenticator?: Authenticator;
   logLevel?: string;
+  extractor?: Extractor; // inyectable en pruebas
+  files?: FileStore;
 }
 
 /** Construye la API. La lógica de negocio vive en src/domain y src/application. */
-export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL }: AppDeps): FastifyInstance {
+export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: logLevel },
+    bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
     genReqId: (req) => (req.headers['x-request-id'] as string | undefined) ?? randomUUID(),
   });
 
@@ -99,7 +107,17 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     now,
     timeZone: env.TZ_DEFAULT,
     previewSecret: env.PREVIEW_SECRET ?? env.AUTH_DEV_SECRET ?? '',
+    capture: {
+      extractor: extractor ?? (env.EXTRACTOR === 'gemini' ? createGeminiExtractor({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createHeuristicExtractor() : createUnavailableExtractor()),
+      files: files ?? createDiskStore(env.STORAGE_DIR),
+      inboxDomain: env.INBOX_DOMAIN,
+      dailyLimit: env.CAPTURE_DAILY_LIMIT,
+      inboundSecret: env.INBOUND_SECRET,
+      maxBytes: Math.floor(env.CAPTURE_MAX_MB * 1024 * 1024),
+    },
   };
+
+  inboundRoutes(app, deps);
 
   app.register(
     async (v1) => {
@@ -112,6 +130,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       seatRoutes(v1, deps);
       billingRoutes(v1, deps);
       financeRoutes(v1, deps);
+      captureRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );

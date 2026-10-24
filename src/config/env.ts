@@ -15,10 +15,22 @@ const schema = z
     CORS_ORIGINS: z.string().optional(),
     // Solo AUTH_MODE=dev: habilita POST /dev/login, que entrega un token del usuario de desarrollo indicado (sin Supabase).
     DEV_LOGIN_USER_ID: z.uuid().optional(),
+    // Captura asistida (Entrega 4). EXTRACTOR=none: la captura falla de forma recuperable; heuristic: solo texto simple (desarrollo); gemini: IA.
+    EXTRACTOR: z.enum(['none', 'heuristic', 'gemini']).default('none'),
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().optional(),
+    STORAGE_DIR: z.string().default('.storage'),
+    INBOUND_SECRET: z.string().min(16).optional(),
+    INBOX_DOMAIN: z.string().default('eva.local'),
+    CAPTURE_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
+    CAPTURE_MAX_MB: z.coerce.number().min(1).max(25).default(12),
   })
   .superRefine((v, ctx) => {
     if (v.AUTH_MODE === 'dev' && (v.AUTH_DEV_SECRET?.length ?? 0) < 32) {
       ctx.addIssue({ code: 'custom', path: ['AUTH_DEV_SECRET'], message: 'AUTH_MODE=dev exige AUTH_DEV_SECRET de al menos 32 caracteres' });
+    }
+    if (v.EXTRACTOR === 'gemini' && (!v.GEMINI_API_KEY || !v.GEMINI_MODEL)) {
+      ctx.addIssue({ code: 'custom', path: ['GEMINI_API_KEY'], message: 'EXTRACTOR=gemini exige GEMINI_API_KEY y GEMINI_MODEL' });
     }
     if (v.AUTH_MODE === 'jwks' && v.DEV_LOGIN_USER_ID) {
       ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN_USER_ID'], message: 'DEV_LOGIN_USER_ID solo es válido con AUTH_MODE=dev' });

@@ -24,6 +24,8 @@ export interface CreateOperationInput {
   goalDeductions?: Deduction[];
   /** …o se acepta que lo reservado quede por encima del saldo. */
   acceptReserveShortfall?: boolean;
+  /** Procedencia del movimiento (captura por correo o foto). */
+  source?: 'manual' | 'email' | 'photo';
 }
 
 /** Cuenta activa del propietario, bloqueada para escritura. */
@@ -94,7 +96,7 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
       }
     }
   }
-  const id = await insertOperation(ctx, { kind: i.kind, date, description: i.description, contactId: i.contactId, categoryId: i.categoryId }, entries);
+  const id = await insertOperation(ctx, { kind: i.kind, date, description: i.description, contactId: i.contactId, categoryId: i.categoryId, source: i.source }, entries);
   if (deductions.length > 0) await applyDeductions(ctx, i.accountId, id, deductions);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: `operation.${i.kind}`, entityType: 'financial_operation', entityId: id, changes: { amount: formatMoney(amount) } });
   // Sin categoría elegida, mandan las reglas del usuario (RN-CL04): `assign` la fija y `suggest` solo la propone.
