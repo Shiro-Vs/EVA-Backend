@@ -7,6 +7,7 @@ import { one, rows } from '../infra/db/db.js';
 import { impactOf } from './budgets.js';
 import { assertActiveCategory } from './categories.js';
 import { autoClassify, decisionsOf } from './classification.js';
+import { applyDeductions, reserveConflict, validateDeductions, type Deduction } from './goals.js';
 import type { Ctx } from './context.js';
 import { ts } from './context.js';
 
@@ -19,6 +20,10 @@ export interface CreateOperationInput {
   description?: string;
   categoryId?: string | null;
   contactId?: string | null;
+  /** Si el egreso usa dinero reservado para metas: de qué metas se descuenta (RN-GO04). */
+  goalDeductions?: Deduction[];
+  /** …o se acepta que lo reservado quede por encima del saldo. */
+  acceptReserveShortfall?: boolean;
 }
 
 /** Cuenta activa del propietario, bloqueada para escritura. */
@@ -76,7 +81,21 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
   } else {
     entries = [{ accountId: i.accountId, amount: i.kind === 'income' ? amount : -amount }];
   }
+  // Un egreso que se come dinero reservado para una meta se decide ANTES de confirmar (RN-GO04).
+  let deductions: Deduction[] = [];
+  if (i.kind !== 'income') {
+    const reserved = await reserveConflict(ctx, i.accountId, amount);
+    if (reserved) {
+      if (i.goalDeductions && i.goalDeductions.length > 0) {
+        await validateDeductions(ctx, i.accountId, reserved.eaten, i.goalDeductions, reserved.goals);
+        deductions = i.goalDeductions;
+      } else if (!i.acceptReserveShortfall) {
+        throw unprocessable('GOAL_RESERVE_CONFLICT', 'Este gasto usa dinero reservado para una meta: elige de qué meta se descuenta o acepta el faltante', { accountId: i.accountId, eaten: formatMoney(reserved.eaten), goals: reserved.goals });
+      }
+    }
+  }
   const id = await insertOperation(ctx, { kind: i.kind, date, description: i.description, contactId: i.contactId, categoryId: i.categoryId }, entries);
+  if (deductions.length > 0) await applyDeductions(ctx, i.accountId, id, deductions);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: `operation.${i.kind}`, entityType: 'financial_operation', entityId: id, changes: { amount: formatMoney(amount) } });
   // Sin categoría elegida, mandan las reglas del usuario (RN-CL04): `assign` la fija y `suggest` solo la propone.
   const classification = !i.categoryId && i.kind !== 'transfer'

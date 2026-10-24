@@ -4,6 +4,7 @@ import * as budgets from '../../application/budgets.js';
 import * as cards from '../../application/cards.js';
 import * as categories from '../../application/categories.js';
 import * as classification from '../../application/classification.js';
+import * as goals from '../../application/goals.js';
 import * as ledger from '../../application/loanLedger.js';
 import * as operations from '../../application/operations.js';
 import { ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
@@ -17,6 +18,51 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations', async (req) => {
     const q = parse(s.operationListQuery, req.query);
     return withCtx(deps, req, (ctx) => operations.listOperations(ctx, { ...q, offset: s.decodeCursor(q.cursor) }));
+  });
+
+  // ---------- Metas de ahorro ----------
+  app.get('/goals', async (req) => {
+    const q = parse(s.goalListQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => goals.listGoals(ctx, q.status)) };
+  });
+  app.get('/goals/overview', async (req) => withCtx(deps, req, (ctx) => goals.overview(ctx)));
+  app.post('/goals', async (req, reply) => {
+    const body = parse(s.goalCreate, req.body);
+    reply.code(201);
+    return withCtx(deps, req, (ctx) => goals.createGoal(ctx, body));
+  });
+  app.get('/goals/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => goals.getGoal(ctx, id));
+  });
+  app.patch('/goals/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.goalPatch, req.body);
+    const version = ifMatch(req);
+    return withCtx(deps, req, (ctx) => goals.patchGoal(ctx, id, version, body));
+  });
+  app.post('/goals/:id/archive', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => goals.setGoalStatus(ctx, id, 'archived'));
+  });
+  app.post('/goals/:id/restore', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => goals.setGoalStatus(ctx, id, 'active'));
+  });
+  app.post('/goals/:id/reserve', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.goalMoney, req.body);
+    return withIdempotency(deps, req, reply, `POST /goals/${id}/reserve`, body, async (ctx) => ({ status: 200, body: await goals.reserve(ctx, id, body) }));
+  });
+  app.post('/goals/:id/release', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.goalMoney, req.body);
+    return withIdempotency(deps, req, reply, `POST /goals/${id}/release`, body, async (ctx) => ({ status: 200, body: await goals.release(ctx, id, body) }));
+  });
+  app.post('/goals/:id/link-transfer', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.goalLink, req.body);
+    return withIdempotency(deps, req, reply, `POST /goals/${id}/link-transfer`, body, async (ctx) => ({ status: 200, body: await goals.linkTransfer(ctx, id, body.operationId) }));
   });
 
   // ---------- Presupuestos ----------

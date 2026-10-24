@@ -40,6 +40,8 @@ export const operationCreate = z.object({
   description: z.string().trim().max(200).optional(),
   categoryId: uuid.nullish(),
   contactId: uuid.nullish(),
+  goalDeductions: z.array(z.object({ goalId: uuid, amount: money }).strict()).max(20).optional(),
+  acceptReserveShortfall: z.boolean().optional(),
 }).strict();
 
 export const reverseBody = z.object({ reason: text(200), date: isoDate.optional() }).strict();
@@ -153,6 +155,12 @@ export const loanPayoffCreate = loanPayoffBody.extend({ previewToken: z.string()
 export const lateFeeBody = z.object({ mode: z.enum(['fixed', 'percent']), amount: money.nullish(), ratePercent: percent.nullish() }).strict();
 export const lateFeeCreate = lateFeeBody.extend({ previewToken: z.string().min(10) }).strict();
 export const tokenOnly = z.object({ previewToken: z.string().min(10) }).strict();
+
+export const goalCreate = z.object({ name: text(80), targetAmount: money, targetDate: isoDate.nullish(), icon: optText(40), color: optText(20), note: optText(200) }).strict();
+export const goalPatch = z.object({ name: text(80).optional(), targetAmount: money.optional(), targetDate: isoDate.nullish(), icon: optText(40), color: optText(20), note: optText(200) }).strict();
+export const goalMoney = z.object({ accountId: uuid, amount: money, note: z.string().trim().max(200).optional() }).strict();
+export const goalLink = z.object({ operationId: uuid }).strict();
+export const goalListQuery = z.object({ status: z.enum(['active', 'archived']).default('active') });
 
 export const budgetCreate = z.object({
   name: text(80),
