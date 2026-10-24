@@ -323,7 +323,7 @@ export const captureInboundEmail = z.object({
   messageId: z.string().trim().max(300).optional(),
   attachments: z.array(z.object({ filename: z.string().max(200).optional(), mime: z.string().max(100), contentBase64: z.string().min(4) }).strict()).max(10).optional(),
 }).strict();
-export const captureDocsQuery = z.object({ status: z.enum(['received', 'proposed', 'failed', 'discarded', 'no_transaction']).optional() });
+export const captureDocsQuery = z.object({ status: z.enum(['received', 'proposed', 'failed', 'discarded', 'no_transaction', 'loan_document']).optional() });
 export const captureProposalsQuery = z.object({ status: z.enum(['pending', 'accepted', 'linked', 'discarded']).default('pending') });
 export const proposalPatch = z.object({
   direction: z.enum(['income', 'expense', 'transfer']).optional(), amount: money.nullable().optional(), occurredOn: isoDate.nullable().optional(), occurredTime: isoTime.nullable().optional(),
@@ -355,3 +355,30 @@ export const chatMessage = z.object({
   text: question,
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(2000) }).strict()).max(10).optional(),
 }).strict();
+
+// ---------- Préstamos bancarios con documentos (Entrega 4, bloque 3) ----------
+const loanFactKey = z.enum(['principal', 'tea', 'tcea', 'term_months', 'installments_count', 'disbursed_on', 'first_due_date', 'monthly_payment', 'outstanding_balance', 'loan_number']);
+const loanInstallment = z.object({
+  number: z.number().int().min(1).max(600), dueDate: isoDate,
+  principal: money.nullish(), interest: money.nullish(), insurance: money.nullish(), fees: money.nullish(), total: money,
+}).strict().transform((r) => ({ ...r, principal: r.principal ?? null, interest: r.interest ?? null, insurance: r.insurance ?? null, fees: r.fees ?? null }));
+export const bankLoanCreate = z.object({ name: text(80), entity: optText(80), accountId: uuid.nullish(), note: optText(300) }).strict();
+export const bankLoanPatch = z.object({ name: text(80).optional(), entity: optText(80), accountId: uuid.nullish(), note: optText(300), status: z.enum(['active', 'closed']).optional() }).strict();
+export const bankLoanListQuery = z.object({ status: z.enum(['active', 'closed']).optional() });
+export const bankLoanChange = z.object({
+  documentId: uuid.optional(),
+  kind: z.enum(['summary', 'schedule', 'statement']).optional(),
+  facts: z.array(z.object({ key: loanFactKey, value: z.string().trim().min(1).max(60), asOf: isoDate.nullish() }).strict()).max(20).optional(),
+  installments: z.array(loanInstallment).min(1).max(600).optional(),
+}).strict();
+export const bankLoanChangeConfirm = bankLoanChange.extend({ previewToken: z.string().min(10), acknowledgeWarnings: z.boolean().optional() }).strict();
+const bankLoanPaymentFields = {
+  accountId: uuid, amount: money, paidOn: isoDate.optional(), installmentNumber: z.number().int().min(1).max(600).optional(), note: z.string().trim().max(200).optional(), documentId: uuid.optional(),
+  principal: money.nullish(), interest: money.nullish(), insurance: money.nullish(), fees: money.nullish(),
+};
+export const bankLoanPaymentPreview = z.object(bankLoanPaymentFields).strict();
+export const bankLoanPaymentCreate = z.object({
+  ...bankLoanPaymentFields, previewToken: z.string().min(10),
+  goalDeductions: z.array(z.object({ goalId: uuid, amount: money }).strict()).max(20).optional(), acceptReserveShortfall: z.boolean().optional(),
+}).strict();
+export const bankLoanPaymentReverse = z.object({ reason: text(200) }).strict();

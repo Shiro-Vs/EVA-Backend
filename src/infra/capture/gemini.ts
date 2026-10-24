@@ -8,6 +8,8 @@ const SYSTEM = [
   'Responde SOLO con un JSON con esta forma: {"documentType":"payment_receipt|bank_statement|loan_schedule|loan_summary|card_statement|other","isTransaction":boolean,"confidence":0..1,',
   '"movements":[{"direction":"income|expense|transfer","amount":"10.25","currency":"PEN","occurredOn":"YYYY-MM-DD o null","occurredTime":"HH:MM en 24 horas o null","counterparty":null,"channel":null,"operationId":null,"concept":null,"suggestedCategory":null,"items":[{"concept":"","amount":""}]}],',
   '"missingFields":[],"warnings":[]}.',
+  'Si el documento es de un préstamo (resumen/hoja resumen, cronograma de pagos o estado de cuenta del crédito), añade la clave "loan" con: {"entity","loanNumber","principal","tea","tcea" (porcentajes como "18.50"),"termMonths","installmentsCount","disbursedOn","firstDueDate","monthlyPayment","outstandingBalance","asOf","installments":[{"number":1,"dueDate":"YYYY-MM-DD","principal","interest","insurance","fees","total"}]} con documentType loan_summary, loan_schedule o bank_statement.',
+  'En "loan" copia SOLO lo que el documento dice; lo que no conste va como null (no estimes TEA, seguros ni intereses) y las cuotas ilegibles o cortadas no se completan. Incluye todas las filas de todas las páginas.',
   'La hora va en formato 24 horas HH:MM (convierte a. m./p. m.: 05:32 p. m. = 17:32); null si no consta.',
   'Copia el nombre de la contraparte TAL COMO aparece, incluido el asterisco si viene truncado (p. ej. "Julia Tra*"): el asterisco indica que el nombre está incompleto.',
   'El importe es un decimal exacto con punto, como texto. No inventes datos: si algo no consta, usa null y añádelo a missingFields.',

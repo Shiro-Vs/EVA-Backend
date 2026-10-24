@@ -24,6 +24,8 @@ export interface CreateOperationInput {
   goalDeductions?: Deduction[];
   /** …o se acepta que lo reservado quede por encima del saldo. */
   acceptReserveShortfall?: boolean;
+  /** Naturaleza del movimiento (por defecto ordinario). */
+  concept?: 'ordinary' | 'loan_payment';
   /** Hora local HH:MM, opcional (comprobantes). */
   time?: string | null;
   /** Procedencia del movimiento (captura por correo o foto). */
@@ -98,7 +100,7 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
       }
     }
   }
-  const id = await insertOperation(ctx, { kind: i.kind, date, time: i.time, description: i.description, contactId: i.contactId, categoryId: i.categoryId, source: i.source }, entries);
+  const id = await insertOperation(ctx, { kind: i.kind, date, time: i.time, concept: i.concept, description: i.description, contactId: i.contactId, categoryId: i.categoryId, source: i.source }, entries);
   if (deductions.length > 0) await applyDeductions(ctx, i.accountId, id, deductions);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: `operation.${i.kind}`, entityType: 'financial_operation', entityId: id, changes: { amount: formatMoney(amount) } });
   // Sin categoría elegida, mandan las reglas del usuario (RN-CL04): `assign` la fija y `suggest` solo la propone.
@@ -143,7 +145,7 @@ export async function reverseOperationCore(ctx: Ctx, id: string, reason: string,
 
   if (!opts.allowLinked) {
     const linked = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-      select (select count(*) from receipt where operation_id = ${id}) + (select count(*) from supplier_payment where operation_id = ${id}) + (select count(*) from refund where operation_id = ${id}) as n`);
+      select (select count(*) from receipt where operation_id = ${id}) + (select count(*) from supplier_payment where operation_id = ${id}) + (select count(*) from refund where operation_id = ${id}) + (select count(*) from bank_loan_payment where operation_id = ${id}) as n`);
     if (Number(linked?.n ?? 0) > 0) throw unprocessable('OPERATION_LINKED', 'This operation backs a receipt, refund or supplier payment: reverse that record instead');
   }
 

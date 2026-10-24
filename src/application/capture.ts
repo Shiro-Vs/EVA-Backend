@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
+import { KIND_OF_DOCTYPE } from '../domain/bankLoan.js';
 import { contentHash, duplicateReason, extractionSchema, inboxAddressFor, minutesApart, missingForAccept, type ExtractedMovement } from '../domain/capture.js';
 import { formatISO } from '../domain/localDate.js';
 import { formatMoney, parseMoney } from '../domain/money.js';
@@ -209,6 +210,11 @@ export async function processDocument(ctx: Ctx, deps: CaptureDeps, id: string) {
   }
   await log('ok', { raw: parsed.data, usage: out.usage, provider: out.provider, model: out.model });
   const x = parsed.data;
+  // Resumen, cronograma o estado de cuenta de un préstamo: espera a que el usuario lo asocie a un préstamo (RN-B02).
+  if (x.loan && KIND_OF_DOCTYPE[x.documentType]) {
+    await sql`update source_document set status = 'loan_document' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+    return;
+  }
   if (!x.isTransaction || x.movements.length === 0) {
     await sql`update source_document set status = 'no_transaction' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
     return;

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { loanExtraction } from './bankLoan.js';
+import { isoDate, money, optText } from './captureBase.js';
 import { parseISO } from './localDate.js';
 
 // Esquema de salida de la extracción (07 §6). El servidor lo valida antes de proponer nada: lo que no cumpla → `Fallido`.
-const money = z.string().regex(/^\d{1,12}(\.\d{1,2})?$/, 'importe decimal con punto y hasta 2 decimales');
-const text = z.string().trim().max(300).nullable().optional().transform((v) => (v ? v : null));
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => { try { parseISO(s); return true; } catch { return false; } }, 'fecha inexistente');
+const text = optText;
 
 export const extractedMovement = z.object({
   direction: z.enum(['income', 'expense', 'transfer']),
@@ -28,6 +28,8 @@ export const extractionSchema = z.object({
   isTransaction: z.boolean(),
   confidence: z.number().min(0).max(1).default(0),
   movements: z.array(extractedMovement).max(100).default([]),
+  /** Presente solo en documentos de préstamo (resumen, cronograma, estado de cuenta). */
+  loan: loanExtraction.nullable().optional().transform((v) => v ?? null),
   missingFields: z.array(z.string().max(60)).max(30).default([]),
   warnings: z.array(z.string().max(300)).max(30).default([]),
 });
