@@ -127,6 +127,32 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+const percent = z.string().regex(/^\d+(\.\d{1,2})?$/, 'Porcentaje inválido: use una cadena como "5" o "5.25"');
+export const loanBody = z.object({
+  direction: z.enum(['lent', 'borrowed']),
+  contactId: uuid.nullish(),
+  counterpartyName: optText(80),
+  principal: money,
+  openedOn: isoDate.optional(),
+  accountId: uuid.nullish(),
+  interest: z.object({ mode: z.enum(['none', 'fixed', 'percent']), amount: money.nullish(), ratePercent: percent.nullish(), base: z.enum(['original', 'pending']).optional() }).strict(),
+  repayment: z.object({ kind: z.enum(['installments', 'final_date', 'open']), installments: z.number().int().min(1).max(360).optional(), firstDueDate: isoDate.optional(), finalDate: isoDate.optional() }).strict(),
+  paymentOrder: z.enum(['capital_first', 'interest_first']).optional(),
+  earlyPayoff: z.enum(['keep', 'accrued']).optional(),
+  note: optText(200),
+}).strict();
+export const loanCreate = loanBody.extend({ previewToken: z.string().min(10) }).strict();
+export const loanPaymentBody = z.object({
+  amount: money, accountId: uuid, paidOn: isoDate.optional(),
+  allocations: z.array(z.object({ chargeId: uuid, amount: money }).strict()).max(200).optional(), onRemainder: z.literal('keep').optional(),
+}).strict();
+export const loanPaymentCreate = loanPaymentBody.extend({ previewToken: z.string().min(10) }).strict();
+export const loanPayoffBody = z.object({ accountId: uuid, paidOn: isoDate.optional() }).strict();
+export const loanPayoffCreate = loanPayoffBody.extend({ previewToken: z.string().min(10) }).strict();
+export const lateFeeBody = z.object({ mode: z.enum(['fixed', 'percent']), amount: money.nullish(), ratePercent: percent.nullish() }).strict();
+export const lateFeeCreate = lateFeeBody.extend({ previewToken: z.string().min(10) }).strict();
+export const tokenOnly = z.object({ previewToken: z.string().min(10) }).strict();
+
 export const creditDetails = z.object({ creditLine: money.nullish(), cutoffDay: z.number().int().min(1).max(31), dueDay: z.number().int().min(1).max(31) }).strict();
 export const statementCreate = z.object({
   cutoffDate: isoDate, dueDate: isoDate, periodTotal: money, minimumPayment: money, totalBalance: money.nullish(), note: optText(200),

@@ -50,7 +50,7 @@ export async function contactStatement(ctx: Ctx, contactId: string) {
     }
   }
   const loans = await listLoans(ctx, contactId);
-  for (const l of loans.filter((x) => parseMoney(x.pending) > 0n)) lines.push(`• Préstamo (deuda convertida): ${soles(parseMoney(l.pending))}`);
+  for (const l of loans.filter((x) => x.engine !== 'ledger' && parseMoney(x.pending) > 0n)) lines.push(`• Préstamo (deuda convertida): ${soles(parseMoney(l.pending))}`);
   const total = parseMoney(contact.totals.pending);
   const shareText = total === 0n
     ? `Hola ${contact.name}, estás al día. ¡Gracias!`

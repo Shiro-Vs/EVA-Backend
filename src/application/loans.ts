@@ -5,6 +5,7 @@ import { notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
+import { getLedgerLoan, ledgerLoanIds } from './loanLedger.js';
 import { ts, type Ctx } from './context.js';
 
 export type ConversionTrigger = 'exit' | 'individual_switch' | 'courtesy_choice' | 'manual';
@@ -52,7 +53,7 @@ export async function convertDebtToLoan(ctx: Ctx, o: { contactId: string; obliga
   }
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'debt.convert', entityType: 'loan', entityId: loan!.id, reason: o.reason,
     changes: { trigger: o.trigger, principal: formatMoney(principal), components: src.length } });
-  return getLoan(ctx, loan!.id);
+  return getComponentLoan(ctx, loan!.id);
 }
 
 interface LoanRow { id: string; contact_id: string; contact_name: string; principal: string; opened_on: string; origin: string; note: string | null; created_at: unknown; trigger: string | null; reason: string | null }
@@ -82,11 +83,21 @@ async function toView(ctx: Ctx, l: LoanRow) {
   };
 }
 
-export async function getLoan(ctx: Ctx, id: string) {
+/** Préstamo de una deuda de servicios convertida (con sus componentes). */
+async function getComponentLoan(ctx: Ctx, id: string) {
   const l = await one<LoanRow>(ctx.trx, sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.id = ${id}`);
   if (!l) throw notFound('Loan');
   return toView(ctx, l);
 }
+
+/** Un préstamo de cualquiera de los dos motores: por conversión de deuda (componentes) o del libro de cargos. */
+export async function getLoan(ctx: Ctx, id: string): Promise<LoanSummary> {
+  const e = await one<{ engine: string }>(ctx.trx, sql<{ engine: string }>`select engine from loan where owner_id = ${ctx.ownerId} and id = ${id}`);
+  if (!e) throw notFound('Loan');
+  return (e.engine === 'ledger' ? await getLedgerLoan(ctx, id) : await getComponentLoan(ctx, id)) as unknown as LoanSummary;
+}
+
+export interface LoanSummary { id: string; openedOn: string; pending: string; contactId: string | null; [k: string]: unknown }
 
 export async function listLoans(ctx: Ctx, contactId?: string) {
   if (contactId) {
@@ -94,11 +105,12 @@ export async function listLoans(ctx: Ctx, contactId?: string) {
     if (!c) throw notFound('Contact');
   }
   const ls = await rows<LoanRow>(ctx.trx, contactId
-    ? sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.contact_id = ${contactId} order by l.opened_on desc, l.created_at desc`
-    : sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} order by l.opened_on desc, l.created_at desc`);
-  const out = [];
-  for (const l of ls) out.push(await toView(ctx, l));
-  return out;
+    ? sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.engine = 'components' and l.contact_id = ${contactId} order by l.opened_on desc, l.created_at desc`
+    : sql<LoanRow>`${loanBase} where l.owner_id = ${ctx.ownerId} and l.engine = 'components' order by l.opened_on desc, l.created_at desc`);
+  const out: LoanSummary[] = [];
+  for (const l of ls) out.push((await toView(ctx, l)) as unknown as LoanSummary);
+  for (const id of await ledgerLoanIds(ctx, contactId)) out.push((await getLedgerLoan(ctx, id)) as unknown as LoanSummary);
+  return out.sort((a, b) => b.openedOn.localeCompare(a.openedOn));
 }
 
 interface ManualRow { obligation_id: string; pending: string; contact_id: string; is_charge: boolean; seat_label: string | null; subscription_name: string | null; start_date: string | null; end_date: string | null }

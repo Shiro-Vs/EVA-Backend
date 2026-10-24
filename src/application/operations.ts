@@ -44,12 +44,12 @@ export function resolveDate(ctx: Ctx, date?: string) {
 /** Inserta una operación y sus asientos. Usado también por cobros y pagos al proveedor. */
 export async function insertOperation(
   ctx: Ctx,
-  o: { kind: 'income' | 'expense' | 'transfer'; date: number; description?: string; contactId?: string | null; categoryId?: string | null; source?: string },
+  o: { kind: 'income' | 'expense' | 'transfer'; date: number; description?: string; contactId?: string | null; categoryId?: string | null; source?: string; concept?: 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation' },
   entries: Array<{ accountId: string; amount: bigint }>,
 ) {
   const op = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
-    insert into financial_operation (owner_id, kind, occurred_on, description, contact_id, category_id, source, created_by)
-    values (${ctx.ownerId}, ${o.kind}, ${formatISO(o.date)}, ${o.description ?? ''}, ${o.contactId ?? null}, ${o.categoryId ?? null}, ${o.source ?? 'manual'}, ${ctx.actorId})
+    insert into financial_operation (owner_id, kind, occurred_on, description, contact_id, category_id, source, concept, created_by)
+    values (${ctx.ownerId}, ${o.kind}, ${formatISO(o.date)}, ${o.description ?? ''}, ${o.contactId ?? null}, ${o.categoryId ?? null}, ${o.source ?? 'manual'}, ${o.concept ?? 'ordinary'}, ${ctx.actorId})
     returning id`);
   for (const e of entries) {
     await sql`insert into account_entry (owner_id, operation_id, account_id, amount) values (${ctx.ownerId}, ${op!.id}, ${e.accountId}, ${formatMoney(e.amount)})`.execute(ctx.trx);
@@ -85,8 +85,8 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
 }
 
 export async function getOperation(ctx: Ctx, id: string) {
-  const op = await one<{ id: string; kind: string; occurred_on: string; description: string; status: string; reversal_of_id: string | null; reason: string | null; version: number; created_at: unknown; contact_id: string | null; category_id: string | null; category_name: string | null }>(
-    ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, c.name as category_name
+  const op = await one<{ id: string; kind: string; occurred_on: string; description: string; status: string; reversal_of_id: string | null; reason: string | null; version: number; created_at: unknown; contact_id: string | null; category_id: string | null; category_name: string | null; concept: string }>(
+    ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, o.concept, c.name as category_name
       from financial_operation o left join category c on c.id = o.category_id and c.owner_id = o.owner_id where o.owner_id = ${ctx.ownerId} and o.id = ${id}`);
   if (!op) throw notFound('Operation');
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
@@ -99,7 +99,7 @@ export async function getOperation(ctx: Ctx, id: string) {
     links: { receiptId: links?.receipt_id ?? null, supplierPaymentId: links?.supplier_payment_id ?? null, refundId: links?.refund_id ?? null },
     id: op.id, kind: op.kind, occurredOn: op.occurred_on, description: op.description, status: op.status,
     reversalOfId: op.reversal_of_id, reason: op.reason, version: op.version, createdAt: ts(op.created_at),
-    contactId: op.contact_id, category: op.category_id ? { id: op.category_id, name: op.category_name } : null, classificationTrail: await decisionsOf(ctx, id),
+    concept: op.concept, contactId: op.contact_id, category: op.category_id ? { id: op.category_id, name: op.category_name } : null, classificationTrail: await decisionsOf(ctx, id),
     entries: es.map((e) => ({ accountId: e.account_id, amount: formatMoney(parseMoney(e.amount, { allowNegative: true })) })),
   };
 }
@@ -145,10 +145,10 @@ export interface OperationListQuery {
 /** Movimientos con filtros. «Sin categoría» excluye cobros y devoluciones: no se clasifican como ingreso ganado (RN-CL08). */
 export async function listOperations(ctx: Ctx, q: OperationListQuery) {
   const r = await rows<{
-    id: string; kind: string; occurred_on: string; description: string; status: string; category_id: string | null; category_name: string | null; contact_id: string | null;
+    id: string; kind: string; occurred_on: string; description: string; status: string; category_id: string | null; category_name: string | null; contact_id: string | null; concept: string;
     account_id: string | null; to_account_id: string | null; amount: string | null; is_receipt: boolean; is_refund: boolean; is_supplier: boolean;
   }>(ctx.trx, sql`
-    select o.id, o.kind, o.occurred_on, o.description, o.status, o.category_id, c.name as category_name, o.contact_id,
+    select o.id, o.kind, o.occurred_on, o.description, o.status, o.category_id, c.name as category_name, o.contact_id, o.concept,
       (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount limit 1) as account_id,
       (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount desc limit 1) as to_account_id,
       case when o.kind = 'transfer' then (select max(e.amount) from account_entry e where e.operation_id = o.id)
@@ -171,7 +171,7 @@ export async function listOperations(ctx: Ctx, q: OperationListQuery) {
   const page = r.slice(0, q.limit);
   return {
     items: page.map((x) => ({
-      id: x.id, kind: x.kind, occurredOn: x.occurred_on, description: x.description, status: x.status,
+      id: x.id, kind: x.kind, concept: x.concept, occurredOn: x.occurred_on, description: x.description, status: x.status,
       category: x.category_id ? { id: x.category_id, name: x.category_name } : null, contactId: x.contact_id,
       accountId: x.account_id, toAccountId: x.kind === 'transfer' ? x.to_account_id : null, amount: formatMoney(parseMoney(x.amount ?? '0', { allowNegative: true })),
       links: { receipt: x.is_receipt, refund: x.is_refund, supplierPayment: x.is_supplier },

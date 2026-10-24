@@ -3,6 +3,7 @@ import { formatISO } from '../domain/localDate.js';
 import { formatMoney, parseMoney } from '../domain/money.js';
 import { one, rows } from '../infra/db/db.js';
 import type { Ctx } from './context.js';
+import { ledgerTotals } from './loanLedger.js';
 import { syncAllSubscriptions } from './sync.js';
 
 const m = (v: string | null | undefined) => formatMoney(parseMoney(v ?? '0', { allowNegative: true }));
@@ -44,11 +45,13 @@ export async function summary(ctx: Ctx) {
     where ae.owner_id = ${ctx.ownerId} and fo.kind <> 'opening'
     order by fo.occurred_on desc, fo.created_at desc, ae.amount desc, ae.id desc limit 8`);
 
+  const loans = await ledgerTotals(ctx);
   return {
     asOf: today,
     balance: { net: m(bal?.net), accounts: Number(bal?.n ?? 0) },
     receivable: { pending: m(rec?.pending), overdue: m(rec?.overdue), debtors: Number(rec?.debtors ?? 0), creditFree: m(credit?.free), creditReserved: m(credit?.reserved) },
     subscriptions: { active: Number(subs?.active ?? 0), currentCycleTotal: m(subs?.total) },
+    loans, // préstamos del libro: por cobrar (otorgados) y por pagar (recibidos)
     recent: recent.map((r) => ({
       id: r.id, operationId: r.operation_id, kind: r.kind, status: r.op_status, occurredOn: r.occurred_on, description: r.description,
       account: { id: r.account_id, name: r.account_name }, amount: m(r.amount),

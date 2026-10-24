@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as cards from '../../application/cards.js';
 import * as categories from '../../application/categories.js';
 import * as classification from '../../application/classification.js';
+import * as ledger from '../../application/loanLedger.js';
 import * as operations from '../../application/operations.js';
 import { ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
@@ -15,6 +16,65 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations', async (req) => {
     const q = parse(s.operationListQuery, req.query);
     return withCtx(deps, req, (ctx) => operations.listOperations(ctx, { ...q, offset: s.decodeCursor(q.cursor) }));
+  });
+
+  // ---------- Préstamos (libro de cargos) ----------
+  app.post('/loans/preview', async (req) => {
+    const body = parse(s.loanBody, req.body);
+    return withCtx(deps, req, (ctx) => ledger.previewLoan(ctx, body));
+  });
+  app.post('/loans', async (req, reply) => {
+    const body = parse(s.loanCreate, req.body);
+    return withIdempotency(deps, req, reply, 'POST /loans', body, async (ctx) => ({ status: 201, body: await ledger.createLoan(ctx, body) }));
+  });
+  app.post('/loans/:id/payments/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.loanPaymentBody, req.body);
+    return withCtx(deps, req, (ctx) => ledger.previewPayment(ctx, id, body));
+  });
+  app.post('/loans/:id/payments', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.loanPaymentCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /loans/${id}/payments`, body, async (ctx) => ({ status: 201, body: await ledger.createPayment(ctx, id, body) }));
+  });
+  app.post('/loan-payments/:id/reverse', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reasonBody, req.body);
+    return withIdempotency(deps, req, reply, `POST /loan-payments/${id}/reverse`, body, async (ctx) => ({ status: 200, body: await ledger.reversePayment(ctx, id, body.reason) }));
+  });
+  app.post('/loans/:id/payoff/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.loanPayoffBody, req.body);
+    return withCtx(deps, req, (ctx) => ledger.previewPayoff(ctx, id, body));
+  });
+  app.post('/loans/:id/payoff', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.loanPayoffCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /loans/${id}/payoff`, body, async (ctx) => ({ status: 201, body: await ledger.payoff(ctx, id, body) }));
+  });
+  app.post('/loans/:id/late-fees/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.lateFeeBody, req.body);
+    return withCtx(deps, req, (ctx) => ledger.previewLateFees(ctx, id, body));
+  });
+  app.post('/loans/:id/late-fees', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.lateFeeCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /loans/${id}/late-fees`, body, async (ctx) => ({ status: 200, body: await ledger.applyLateFees(ctx, id, body) }));
+  });
+  app.post('/loans/:id/capitalize/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => ledger.previewCapitalization(ctx, id));
+  });
+  app.post('/loans/:id/capitalize', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.tokenOnly, req.body);
+    return withIdempotency(deps, req, reply, `POST /loans/${id}/capitalize`, body, async (ctx) => ({ status: 200, body: await ledger.capitalize(ctx, id, body.previewToken) }));
+  });
+  app.post('/loans/:id/cancel', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reasonBody, req.body);
+    return withIdempotency(deps, req, reply, `POST /loans/${id}/cancel`, body, async (ctx) => ({ status: 200, body: await ledger.cancelLoan(ctx, id, body.reason) }));
   });
 
   // ---------- Tarjeta de crédito ----------
