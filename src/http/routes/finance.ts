@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as cards from '../../application/cards.js';
 import * as categories from '../../application/categories.js';
 import * as classification from '../../application/classification.js';
 import * as operations from '../../application/operations.js';
@@ -14,6 +15,61 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations', async (req) => {
     const q = parse(s.operationListQuery, req.query);
     return withCtx(deps, req, (ctx) => operations.listOperations(ctx, { ...q, offset: s.decodeCursor(q.cursor) }));
+  });
+
+  // ---------- Tarjeta de crédito ----------
+  app.get('/accounts/:id/credit-details', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, async (ctx) => (await cards.getCreditDetails(ctx, id)) ?? { configured: false });
+  });
+  app.post('/accounts/:id/credit-details', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.creditDetails, req.body);
+    return withCtx(deps, req, (ctx) => cards.putCreditDetails(ctx, id, body));
+  });
+  app.get('/accounts/:id/statements', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => cards.listStatements(ctx, id)) };
+  });
+  app.post('/accounts/:id/statements', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.statementCreate, req.body);
+    return withIdempotency(deps, req, reply, `POST /accounts/${id}/statements`, body, async (ctx) => ({ status: 201, body: await cards.createStatement(ctx, id, body) }));
+  });
+  app.get('/card-statements/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => cards.getStatement(ctx, id));
+  });
+  app.post('/card-statements/:id/void', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reasonBody, req.body);
+    return withCtx(deps, req, (ctx) => cards.voidStatement(ctx, id, body.reason));
+  });
+  app.post('/card-statements/:id/payments', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.statementPayment, req.body);
+    return withIdempotency(deps, req, reply, `POST /card-statements/${id}/payments`, body, async (ctx) => ({ status: 201, body: await cards.linkPayment(ctx, id, body.operationId) }));
+  });
+  app.post('/card-statement-payments/:id/remove', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => cards.unlinkPayment(ctx, id));
+  });
+  app.post('/accounts/:id/installment-purchases', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.installmentPurchase, req.body);
+    return withIdempotency(deps, req, reply, `POST /accounts/${id}/installment-purchases`, body, async (ctx) => ({ status: 201, body: await cards.createInstallmentPurchase(ctx, id, body) }));
+  });
+  app.get('/accounts/:id/installment-plans', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return { items: await withCtx(deps, req, (ctx) => cards.listInstallmentPlans(ctx, id)) };
+  });
+  app.post('/installment-plans/:id/cancel', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => cards.cancelInstallmentPlan(ctx, id));
+  });
+  app.get('/cards/advisor', async (req) => {
+    const q = parse(s.advisorQuery, req.query);
+    return withCtx(deps, req, (ctx) => cards.advisor(ctx, q.date));
   });
 
   // ---------- Categorías ----------

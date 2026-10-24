@@ -29,7 +29,22 @@ export async function getAccountRow(ctx: Ctx, id: string, forUpdate = false) {
   return r;
 }
 
-export const getAccount = async (ctx: Ctx, id: string) => mapAccount(await getAccountRow(ctx, id));
+/** Una tarjeta de crédito muestra su deuda, su línea y lo disponible: la línea NO es dinero propio ni entra en saldos (RN-AC05). */
+export async function getAccount(ctx: Ctx, id: string) {
+  const a = mapAccount(await getAccountRow(ctx, id));
+  if (a.type !== 'credit') return a;
+  const d = await one<{ credit_line: string | null; cutoff_day: number; due_day: number }>(ctx.trx, sql<{ credit_line: string | null; cutoff_day: number; due_day: number }>`
+    select credit_line, cutoff_day, due_day from credit_account_details where owner_id = ${ctx.ownerId} and account_id = ${id}`);
+  const bal = parseMoney(a.balance, { allowNegative: true });
+  const owed = bal < 0n ? -bal : 0n;
+  return {
+    ...a,
+    credit: d ? {
+      creditLine: d.credit_line === null ? null : formatMoney(parseMoney(d.credit_line)), cutoffDay: d.cutoff_day, dueDay: d.due_day,
+      used: formatMoney(owed), available: d.credit_line === null ? null : formatMoney(parseMoney(d.credit_line) - owed),
+    } : null,
+  };
+}
 
 export async function listAccounts(ctx: Ctx, status?: string) {
   const f = status ? sql`and a.status = ${status}` : sql``;

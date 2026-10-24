@@ -127,6 +127,16 @@ export const calendarChangeCreate = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reactivate'), renewalDate: isoDate, reason: reasonText, previewToken: z.string().min(10) }).strict(),
 ]);
 
+export const creditDetails = z.object({ creditLine: money.nullish(), cutoffDay: z.number().int().min(1).max(31), dueDay: z.number().int().min(1).max(31) }).strict();
+export const statementCreate = z.object({
+  cutoffDate: isoDate, dueDate: isoDate, periodTotal: money, minimumPayment: money, totalBalance: money.nullish(), note: optText(200),
+}).strict();
+export const statementPayment = z.object({ operationId: uuid }).strict();
+export const installmentPurchase = z.object({
+  amount: money, installments: z.number().int().min(2).max(60), firstDueDate: isoDate, description: z.string().trim().max(200).optional(), categoryId: uuid.nullish(), date: isoDate.optional(),
+}).strict();
+export const advisorQuery = z.object({ date: isoDate.optional() });
+
 export const categoryCreate = z.object({ name: text(60), parentId: uuid.nullish(), icon: optText(40), color: optText(20) }).strict();
 export const categoryPatch = z.object({ name: text(60).optional(), icon: optText(40), color: optText(20) }).strict();
 export const categoryListQuery = z.object({ status: z.enum(['active', 'archived']).optional() });
