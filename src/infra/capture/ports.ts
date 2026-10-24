@@ -40,3 +40,18 @@ export interface FileStore {
   get(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
 }
+
+// Analista: responde preguntas sobre datos que YA calculó el servidor (07 §9). No tiene herramientas ni puede modificar nada.
+export interface AnalyzeInput {
+  system: string;
+  /** Datos agregados dentro del alcance elegido: se envían como dato, nunca como instrucciones. */
+  context: unknown;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  question: string;
+}
+export interface AnalyzeOutput { text: string; usage: ExtractUsage; provider: string; model: string }
+export interface Analyst {
+  readonly provider: string;
+  readonly model: string;
+  answer(input: AnalyzeInput): Promise<AnalyzeOutput>;
+}

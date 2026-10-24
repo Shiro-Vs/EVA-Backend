@@ -3,14 +3,16 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Env } from '../config/env.js';
 import { createAuthenticator, signDevToken, type Authenticator } from '../infra/auth/auth.js';
+import { createGeminiAnalyst, createLocalAnalyst, createUnavailableAnalyst } from '../infra/capture/analyst.js';
 import { createDiskStore } from '../infra/capture/files.js';
 import { createGeminiExtractor } from '../infra/capture/gemini.js';
 import { createHeuristicExtractor, createUnavailableExtractor } from '../infra/capture/heuristic.js';
-import type { Extractor, FileStore } from '../infra/capture/ports.js';
+import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { createKysely } from '../infra/db/db.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
+import { analysisRoutes } from './routes/analysis.js';
 import { captureRoutes, inboundRoutes } from './routes/capture.js';
 import { coreRoutes } from './routes/core.js';
 import { financeRoutes } from './routes/finance.js';
@@ -30,11 +32,12 @@ export interface AppDeps {
   authenticator?: Authenticator;
   logLevel?: string;
   extractor?: Extractor; // inyectable en pruebas
+  analyst?: Analyst;
   files?: FileStore;
 }
 
 /** Construye la API. La lógica de negocio vive en src/domain y src/application. */
-export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files }: AppDeps): FastifyInstance {
+export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
@@ -115,6 +118,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       inboundSecret: env.INBOUND_SECRET,
       maxBytes: Math.floor(env.CAPTURE_MAX_MB * 1024 * 1024),
     },
+    analyst: analyst ?? (env.EXTRACTOR === 'gemini' ? createGeminiAnalyst({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_ANALYSIS_MODEL ?? env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createLocalAnalyst() : createUnavailableAnalyst()),
   };
 
   inboundRoutes(app, deps);
@@ -131,6 +135,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       billingRoutes(v1, deps);
       financeRoutes(v1, deps);
       captureRoutes(v1, deps);
+      analysisRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );

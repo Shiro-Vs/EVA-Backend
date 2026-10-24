@@ -1,3 +1,4 @@
+import { fetchRetry } from './retry.js';
 import { ExtractorError, type ExtractInput, type ExtractOutput, type Extractor } from './ports.js';
 
 // La clave vive solo en el servidor (07 §6.1). El modelo se elige al desplegar con la documentación vigente de Google (07 §6.8).
@@ -14,7 +15,7 @@ const SYSTEM = [
   'No calcules saldos ni deudas. No devuelvas nada fuera del JSON.',
 ].join('\n');
 
-export interface GeminiOptions { apiKey: string; model: string; fetchFn?: typeof fetch; baseUrl?: string; timeoutMs?: number }
+export interface GeminiOptions { apiKey: string; model: string; fetchFn?: typeof fetch; baseUrl?: string; timeoutMs?: number; sleep?: (ms: number) => Promise<void> }
 
 export function createGeminiExtractor(o: GeminiOptions): Extractor {
   const f = o.fetchFn ?? fetch;
@@ -27,7 +28,7 @@ export function createGeminiExtractor(o: GeminiOptions): Extractor {
       if (i.bytes && i.bytes.length > 0) parts.push({ inlineData: { mimeType: i.mime, data: i.bytes.toString('base64') } });
       let res: Response;
       try {
-        res = await f(`${base}/models/${encodeURIComponent(o.model)}:generateContent`, {
+        res = await fetchRetry(f, `${base}/models/${encodeURIComponent(o.model)}:generateContent`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': o.apiKey },
           body: JSON.stringify({
@@ -35,8 +36,8 @@ export function createGeminiExtractor(o: GeminiOptions): Extractor {
             contents: [{ role: 'user', parts }],
             generationConfig: { responseMimeType: 'application/json', temperature: 0 },
           }),
-          signal: AbortSignal.timeout(o.timeoutMs ?? 45_000),
-        });
+          timeoutMs: o.timeoutMs ?? 45_000,
+        }, { sleep: o.sleep });
       } catch {
         throw new ExtractorError('EXTRACTOR_NETWORK', 'No se pudo contactar con el modelo de IA', true);
       }

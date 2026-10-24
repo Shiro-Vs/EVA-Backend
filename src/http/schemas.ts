@@ -341,3 +341,17 @@ export const proposalLink = z.object({ operationId: uuid }).strict();
 export const proposalUndo = z.object({ reason: text(200) }).strict();
 export const senderRuleCreate = z.object({ sender: text(200), accountId: uuid.nullish(), categoryId: uuid.nullish(), contactId: uuid.nullish() }).strict();
 export const capturePurge = z.object({ olderThanDays: z.number().int().min(1).max(3650).optional() }).strict();
+
+// ---------- Análisis y chat con IA (Entrega 4, bloque 2) ----------
+export const analysisScope = z.object({
+  from: isoDate, to: isoDate,
+  accountIds: z.array(uuid).max(20).optional(), categoryIds: z.array(uuid).max(20).optional(), subscriptionIds: z.array(uuid).max(20).optional(),
+}).strict();
+const question = z.string().trim().min(3).max(500);
+export const analysisRun = z.object({ scope: analysisScope, question, save: z.boolean().optional() }).strict();
+export const analysisContext = z.object({ scope: analysisScope }).strict();
+export const chatCreate = z.object({ title: z.string().trim().max(80).optional(), scope: analysisScope, saveHistory: z.boolean().optional() }).strict();
+export const chatMessage = z.object({
+  text: question,
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(2000) }).strict()).max(10).optional(),
+}).strict();

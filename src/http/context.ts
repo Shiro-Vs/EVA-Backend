@@ -7,7 +7,7 @@ import { todayIn } from '../domain/localDate.js';
 import type { AuthUser, Authenticator } from '../infra/auth/auth.js';
 import { inTx, type DB } from '../infra/db/db.js';
 import { readKey, runIdempotent } from '../infra/idempotency.js';
-import type { Extractor, FileStore } from '../infra/capture/ports.js';
+import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { AppError, fromZod } from './errors.js';
 
 export interface HttpDeps {
@@ -17,6 +17,7 @@ export interface HttpDeps {
   timeZone: string;
   previewSecret: string;
   capture: { extractor: Extractor; files: FileStore; inboxDomain: string; dailyLimit: number; inboundSecret?: string; maxBytes: number };
+  analyst: Analyst;
 }
 
 declare module 'fastify' {

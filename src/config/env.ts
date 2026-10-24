@@ -19,6 +19,8 @@ const schema = z
     EXTRACTOR: z.enum(['none', 'heuristic', 'gemini']).default('none'),
     GEMINI_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().optional(),
+    // Modelo del análisis y chat; si se omite se usa GEMINI_MODEL.
+    GEMINI_ANALYSIS_MODEL: z.string().optional(),
     STORAGE_DIR: z.string().default('.storage'),
     INBOUND_SECRET: z.string().min(16).optional(),
     INBOX_DOMAIN: z.string().default('eva.local'),
