@@ -49,7 +49,9 @@ export async function registerSupplierPayment(ctx: Ctx, cycleId: string, i: { ac
   if (await activePayment(ctx, cycleId)) throw unprocessable('SUPPLIER_PAYMENT_EXISTS', 'This cycle already has an active supplier payment');
   await activeAccount(ctx, i.accountId); // en una cuenta de crédito el asiento negativo aumenta la deuda de la tarjeta
 
-  const opId = await insertOperation(ctx, { kind: 'expense', date: paidOn, description: i.note?.trim() || `Pago de ${c.subscription_name} (${c.start_date} → ${c.end_date})`, source: 'manual' }, [{ accountId: i.accountId, amount: -amount }]);
+  // El pago hereda la categoría del servicio: así consume presupuesto (RN-BU06).
+  const svc = await one<{ category_id: string | null }>(ctx.trx, sql<{ category_id: string | null }>`select category_id from subscription where owner_id = ${ctx.ownerId} and id = ${c.subscription_id}`);
+  const opId = await insertOperation(ctx, { kind: 'expense', date: paidOn, description: i.note?.trim() || `Pago de ${c.subscription_name} (${c.start_date} → ${c.end_date})`, source: 'manual', categoryId: svc?.category_id ?? null }, [{ accountId: i.accountId, amount: -amount }]);
   await sql`
     insert into supplier_payment (owner_id, cycle_id, operation_id, amount_real, announced_price_snapshot, paid_on)
     values (${ctx.ownerId}, ${cycleId}, ${opId}, ${formatMoney(amount)}, ${c.terms_snapshot.announcedPrice}, ${formatISO(paidOn)})`.execute(ctx.trx);

@@ -1867,6 +1867,18 @@
                       }
                     ]
                   },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "occupiedSeats": {
                     "type": "integer",
                     "minimum": 1,
@@ -2047,6 +2059,18 @@
                       {
                         "type": "string",
                         "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       },
                       {
                         "type": "null"
@@ -2294,6 +2318,18 @@
                     ]
                   },
                   "preferredAccountId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "categoryId": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -6305,6 +6341,543 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/budgets": {
+      "get": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Presupuestos con su estado en el período de una fecha (consumo, límite, arrastre, avisos)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Crea un presupuesto (límite por categoría o general, período, avisos, arrastre opcional)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "includeSubcategories": {
+                    "type": "boolean"
+                  },
+                  "period": {
+                    "type": "string",
+                    "enum": [
+                      "weekly",
+                      "monthly",
+                      "yearly"
+                    ]
+                  },
+                  "limit": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d{1,2})?$"
+                  },
+                  "thresholds": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "rollover": {
+                    "type": "boolean"
+                  },
+                  "rolloverCap": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d+(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sharedView": {
+                    "type": "string",
+                    "enum": [
+                      "origin_cycle",
+                      "receipt_date"
+                    ]
+                  },
+                  "startsOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "period",
+                  "limit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/budgets/{id}": {
+      "get": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Detalle: movimientos que consumen y servicios compartidos por costo real neto",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Edita el presupuesto; un límite nuevo rige desde el período actual",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Versión del recurso, p. ej. \"3\"."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "includeSubcategories": {
+                    "type": "boolean"
+                  },
+                  "limit": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d{1,2})?$"
+                  },
+                  "thresholds": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "rollover": {
+                    "type": "boolean"
+                  },
+                  "rolloverCap": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d+(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sharedView": {
+                    "type": "string",
+                    "enum": [
+                      "origin_cycle",
+                      "receipt_date"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/budgets/{id}/history": {
+      "get": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Consumo de los últimos períodos",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/budgets/{id}/archive": {
+      "post": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Archiva un presupuesto",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/budgets/{id}/restore": {
+      "post": {
+        "tags": [
+          "Presupuestos"
+        ],
+        "summary": "Restaura un presupuesto archivado",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"

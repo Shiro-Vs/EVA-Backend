@@ -61,12 +61,13 @@ export const subscriptionBody = z.object({
   preferredAccountId: uuid.nullish(),
   color: optText(20),
   icon: optText(40),
+  categoryId: uuid.nullish(),
 }).strict();
 
 export const subscriptionPreview = subscriptionBody.extend({ occupiedSeats: z.number().int().min(1).max(50).optional() }).strict();
 export const subscriptionCreate = subscriptionBody.extend({ confirmCalendarMismatch: z.boolean().optional(), previewToken: z.string().min(10) }).strict();
 export const subscriptionPatch = z.object({
-  name: text(60).optional(), provider: optText(60), color: optText(20), icon: optText(40), preferredAccountId: uuid.nullish(),
+  name: text(60).optional(), provider: optText(60), color: optText(20), icon: optText(40), preferredAccountId: uuid.nullish(), categoryId: uuid.nullish(),
 }).strict();
 
 export const generateBody = z.object({ ahead: z.number().int().min(1).max(12) }).strict();
@@ -152,6 +153,25 @@ export const loanPayoffCreate = loanPayoffBody.extend({ previewToken: z.string()
 export const lateFeeBody = z.object({ mode: z.enum(['fixed', 'percent']), amount: money.nullish(), ratePercent: percent.nullish() }).strict();
 export const lateFeeCreate = lateFeeBody.extend({ previewToken: z.string().min(10) }).strict();
 export const tokenOnly = z.object({ previewToken: z.string().min(10) }).strict();
+
+export const budgetCreate = z.object({
+  name: text(80),
+  categoryId: uuid.nullish(),
+  includeSubcategories: z.boolean().optional(),
+  period: z.enum(['weekly', 'monthly', 'yearly']),
+  limit: money,
+  thresholds: z.array(z.number().int().min(1).max(1000)).max(6).optional(),
+  rollover: z.boolean().optional(),
+  rolloverCap: money.nullish(),
+  sharedView: z.enum(['origin_cycle', 'receipt_date']).optional(),
+  startsOn: isoDate.optional(),
+}).strict();
+export const budgetPatch = z.object({
+  name: text(80).optional(), includeSubcategories: z.boolean().optional(), limit: money.optional(), thresholds: z.array(z.number().int().min(1).max(1000)).max(6).optional(),
+  rollover: z.boolean().optional(), rolloverCap: money.nullish(), sharedView: z.enum(['origin_cycle', 'receipt_date']).optional(),
+}).strict();
+export const budgetQuery = z.object({ date: isoDate.optional(), status: z.enum(['active', 'archived']).optional() });
+export const budgetHistoryQuery = z.object({ count: z.coerce.number().int().min(1).max(24).default(6) });
 
 export const creditDetails = z.object({ creditLine: money.nullish(), cutoffDay: z.number().int().min(1).max(31), dueDay: z.number().int().min(1).max(31) }).strict();
 export const statementCreate = z.object({

@@ -7,6 +7,7 @@ import { conflict, notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
+import { assertActiveCategory } from './categories.js';
 import { emitCharges } from './charges.js';
 import { ts, type Ctx } from './context.js';
 
@@ -22,6 +23,7 @@ export interface SubscriptionInput {
   preferredAccountId?: string | null;
   color?: string | null;
   icon?: string | null;
+  categoryId?: string | null;
 }
 
 /** Entradas que determinan el cálculo (las cosméticas no entran en la firma de la vista previa). */
@@ -90,10 +92,11 @@ export async function createSubscription(ctx: Ctx, i: SubscriptionInput & { conf
     const a = await one(ctx.trx, sql`select 1 from account where owner_id = ${ctx.ownerId} and id = ${i.preferredAccountId}`);
     if (!a) throw notFound('Account');
   }
+  if (i.categoryId) await assertActiveCategory(ctx, i.categoryId);
   const capacity = i.mode === 'personal' ? 1 : i.capacity;
   const sub = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
-    insert into subscription (owner_id, name, provider, mode, capacity, preferred_account_id, color, icon)
-    values (${ctx.ownerId}, ${i.name.trim()}, ${i.provider ?? null}, ${i.mode}, ${capacity}, ${i.preferredAccountId ?? null}, ${i.color ?? null}, ${i.icon ?? null}) returning id`);
+    insert into subscription (owner_id, name, provider, mode, capacity, preferred_account_id, color, icon, category_id)
+    values (${ctx.ownerId}, ${i.name.trim()}, ${i.provider ?? null}, ${i.mode}, ${capacity}, ${i.preferredAccountId ?? null}, ${i.color ?? null}, ${i.icon ?? null}, ${i.categoryId ?? null}) returning id`);
   const id = sub!.id;
 
   const terms = await one<TermsRow>(ctx.trx, sql<TermsRow>`
@@ -165,7 +168,7 @@ export async function ensureSubscription(ctx: Ctx, id: string) {
 }
 
 interface SubRow {
-  id: string; name: string; provider: string | null; mode: string; capacity: number; preferred_account_id: string | null; color: string | null; icon: string | null;
+  id: string; name: string; provider: string | null; mode: string; capacity: number; preferred_account_id: string | null; color: string | null; icon: string | null; category_id: string | null;
   status: string; currency: string; version: number; created_at: unknown; occupied: string;
 }
 
@@ -188,7 +191,7 @@ export async function getSubscription(ctx: Ctx, id: string) {
   const next = cycles.find((c) => c.start_date > todayIso) ?? null;
   return {
     id: s!.id, name: s!.name, provider: s!.provider, mode: s!.mode, capacity: s!.capacity, preferredAccountId: s!.preferred_account_id,
-    color: s!.color, icon: s!.icon, status: s!.status, currency: s!.currency, version: s!.version, createdAt: ts(s!.created_at),
+    color: s!.color, icon: s!.icon, categoryId: s!.category_id, status: s!.status, currency: s!.currency, version: s!.version, createdAt: ts(s!.created_at),
     occupiedSeats: Number(s!.occupied),
     terms: t ? { announcedPrice: formatMoney(parseMoney(t.announced_price)), interval: { unit: t.interval_unit, count: t.interval_count }, anchor: t.anchor_date, validFrom: t.valid_from } : null,
     currentCycle: current ? cycleView(current) : null,
@@ -206,17 +209,18 @@ export async function listSubscriptions(ctx: Ctx, status?: string) {
   return out;
 }
 
-export async function patchSubscription(ctx: Ctx, id: string, version: number, p: { name?: string; provider?: string | null; color?: string | null; icon?: string | null; preferredAccountId?: string | null }) {
-  const cur = await one<{ name: string; provider: string | null; color: string | null; icon: string | null; preferred_account_id: string | null; version: number }>(ctx.trx,
-    sql`select name, provider, color, icon, preferred_account_id, version from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+export async function patchSubscription(ctx: Ctx, id: string, version: number, p: { name?: string; provider?: string | null; color?: string | null; icon?: string | null; preferredAccountId?: string | null; categoryId?: string | null }) {
+  const cur = await one<{ name: string; provider: string | null; color: string | null; icon: string | null; preferred_account_id: string | null; category_id: string | null; version: number }>(ctx.trx,
+    sql`select name, provider, color, icon, preferred_account_id, category_id, version from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!cur) throw notFound('Subscription');
   if (cur.version !== version) throw conflict('CONFLICT_VERSION', 'The subscription was modified; reload and retry');
   if (p.preferredAccountId) {
     const a = await one(ctx.trx, sql`select 1 from account where owner_id = ${ctx.ownerId} and id = ${p.preferredAccountId}`);
     if (!a) throw notFound('Account');
   }
+  if (p.categoryId) await assertActiveCategory(ctx, p.categoryId);
   await sql`
-    update subscription set name = ${(p.name ?? cur.name).trim()}, provider = ${p.provider === undefined ? cur.provider : p.provider},
+    update subscription set name = ${(p.name ?? cur.name).trim()}, provider = ${p.provider === undefined ? cur.provider : p.provider}, category_id = ${p.categoryId === undefined ? cur.category_id : p.categoryId},
       color = ${p.color === undefined ? cur.color : p.color}, icon = ${p.icon === undefined ? cur.icon : p.icon},
       preferred_account_id = ${p.preferredAccountId === undefined ? cur.preferred_account_id : p.preferredAccountId}
     where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);

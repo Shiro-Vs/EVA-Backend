@@ -95,6 +95,13 @@ export const ROUTES: Doc[] = [
   D('post', '/receipts/{id}/reverse/preview', 'Correcciones', 'Vista de efectos de revertir un cobro'),
   D('post', '/receipts/{id}/reverse', 'Correcciones', 'Revierte un cobro: anula el ingreso y las deudas vuelven a quedar pendientes', { body: s.receiptReverseCreate, idempotent: true }),
 
+  D('get', '/budgets', 'Presupuestos', 'Presupuestos con su estado en el período de una fecha (consumo, límite, arrastre, avisos)'),
+  D('post', '/budgets', 'Presupuestos', 'Crea un presupuesto (límite por categoría o general, período, avisos, arrastre opcional)', { body: s.budgetCreate, status: 201 }),
+  D('get', '/budgets/{id}', 'Presupuestos', 'Detalle: movimientos que consumen y servicios compartidos por costo real neto'),
+  D('get', '/budgets/{id}/history', 'Presupuestos', 'Consumo de los últimos períodos'),
+  D('patch', '/budgets/{id}', 'Presupuestos', 'Edita el presupuesto; un límite nuevo rige desde el período actual', { body: s.budgetPatch, ifMatch: true }),
+  D('post', '/budgets/{id}/archive', 'Presupuestos', 'Archiva un presupuesto'),
+  D('post', '/budgets/{id}/restore', 'Presupuestos', 'Restaura un presupuesto archivado'),
   D('post', '/loans/preview', 'Préstamos', 'Vista previa de un préstamo nuevo: cronograma, intereses y totales', { body: s.loanBody }),
   D('post', '/loans', 'Préstamos', 'Registra un préstamo recibido u otorgado, con su desembolso opcional', { body: s.loanCreate, idempotent: true, status: 201 }),
   D('post', '/loans/{id}/payments/preview', 'Préstamos', 'Vista previa de un pago: a qué cargos se aplica (propuesta o elegida) y el sobrante', { body: s.loanPaymentBody }),

@@ -4,6 +4,7 @@ import { formatMoney, parseMoney } from '../domain/money.js';
 import { notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
+import { impactOf } from './budgets.js';
 import { assertActiveCategory } from './categories.js';
 import { autoClassify, decisionsOf } from './classification.js';
 import type { Ctx } from './context.js';
@@ -81,7 +82,10 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
   const classification = !i.categoryId && i.kind !== 'transfer'
     ? await autoClassify(ctx, id, { accountId: i.accountId, direction: i.kind, amount, text: i.description ?? '' })
     : null;
-  return { ...(await getOperation(ctx, id)), classification };
+  const created = await getOperation(ctx, id);
+  // Avisos de presupuesto: informan, nunca bloquean el gasto (RN-BU01).
+  const budgetImpact = i.kind === 'expense' ? await impactOf(ctx, created.category?.id ?? null, date) : [];
+  return { ...created, classification, budgetImpact };
 }
 
 export async function getOperation(ctx: Ctx, id: string) {

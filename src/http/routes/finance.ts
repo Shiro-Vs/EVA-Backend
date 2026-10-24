@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import * as budgets from '../../application/budgets.js';
 import * as cards from '../../application/cards.js';
 import * as categories from '../../application/categories.js';
 import * as classification from '../../application/classification.js';
@@ -16,6 +17,41 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/operations', async (req) => {
     const q = parse(s.operationListQuery, req.query);
     return withCtx(deps, req, (ctx) => operations.listOperations(ctx, { ...q, offset: s.decodeCursor(q.cursor) }));
+  });
+
+  // ---------- Presupuestos ----------
+  app.get('/budgets', async (req) => {
+    const q = parse(s.budgetQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => budgets.listBudgets(ctx, q.date, q.status)) };
+  });
+  app.post('/budgets', async (req, reply) => {
+    const body = parse(s.budgetCreate, req.body);
+    reply.code(201);
+    return withCtx(deps, req, (ctx) => budgets.createBudget(ctx, body));
+  });
+  app.get('/budgets/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const q = parse(s.budgetQuery, req.query);
+    return withCtx(deps, req, (ctx) => budgets.getBudget(ctx, id, q.date));
+  });
+  app.get('/budgets/:id/history', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const q = parse(s.budgetHistoryQuery, req.query);
+    return { items: await withCtx(deps, req, (ctx) => budgets.budgetHistory(ctx, id, q.count)) };
+  });
+  app.patch('/budgets/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.budgetPatch, req.body);
+    const version = ifMatch(req);
+    return withCtx(deps, req, (ctx) => budgets.patchBudget(ctx, id, version, body));
+  });
+  app.post('/budgets/:id/archive', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => budgets.setBudgetStatus(ctx, id, 'archived'));
+  });
+  app.post('/budgets/:id/restore', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => budgets.setBudgetStatus(ctx, id, 'active'));
   });
 
   // ---------- Préstamos (libro de cargos) ----------
