@@ -393,3 +393,9 @@ export const snapshotsQuery = z.object({ month: monthStr.optional() });
 // ---------- Preferencias, panel y avisos (Entrega 5) ----------
 export { preferencesPatch } from '../domain/preferences.js';
 export const remindersQuery = z.object({ days: z.coerce.number().int().min(1).max(60).default(14) });
+
+// ---------- Respaldos (Entrega 5) ----------
+export const backupCreate = z.object({ note: z.string().trim().max(200).optional() }).strict();
+export const backupImport = z.object({ contentBase64: z.string().min(16) }).strict();
+export const restoreMode = z.object({ mode: z.enum(['replace', 'merge']) }).strict();
+export const restoreConfirm = z.object({ mode: z.enum(['replace', 'merge']), previewToken: z.string().min(10) }).strict();

@@ -18,6 +18,8 @@ export interface HttpDeps {
   previewSecret: string;
   capture: { extractor: Extractor; files: FileStore; inboxDomain: string; dailyLimit: number; inboundSecret?: string; maxBytes: number };
   analyst: Analyst;
+  backup: { key: Buffer | null };
+  cronSecret?: string;
 }
 
 declare module 'fastify' {

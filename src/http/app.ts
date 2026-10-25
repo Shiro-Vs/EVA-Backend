@@ -14,6 +14,7 @@ import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { bankLoanRoutes } from './routes/bankLoans.js';
+import { backupRoutes, jobRoutes } from './routes/backups.js';
 import { preferenceRoutes } from './routes/preferences.js';
 import { reportRoutes } from './routes/reports.js';
 import { captureRoutes, inboundRoutes } from './routes/capture.js';
@@ -121,10 +122,13 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       inboundSecret: env.INBOUND_SECRET,
       maxBytes: Math.floor(env.CAPTURE_MAX_MB * 1024 * 1024),
     },
+    backup: { key: env.BACKUP_ENCRYPTION_KEY ? Buffer.from(env.BACKUP_ENCRYPTION_KEY, 'hex') : null },
+    cronSecret: env.CRON_SECRET,
     analyst: analyst ?? (env.EXTRACTOR === 'gemini' ? createGeminiAnalyst({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_ANALYSIS_MODEL ?? env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createLocalAnalyst() : createUnavailableAnalyst()),
   };
 
   inboundRoutes(app, deps);
+  jobRoutes(app, deps);
 
   app.register(
     async (v1) => {
@@ -140,6 +144,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       captureRoutes(v1, deps);
       analysisRoutes(v1, deps);
       bankLoanRoutes(v1, deps);
+      backupRoutes(v1, deps);
       reportRoutes(v1, deps);
       preferenceRoutes(v1, deps);
     },

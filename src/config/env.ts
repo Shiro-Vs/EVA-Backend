@@ -25,6 +25,9 @@ const schema = z
     INBOUND_SECRET: z.string().min(16).optional(),
     INBOX_DOMAIN: z.string().default('eva.local'),
     CAPTURE_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
+    // Respaldos: clave opcional AES-256 (64 caracteres hex) y secreto del trabajo programado diario.
+    BACKUP_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'Debe ser una clave de 32 bytes en hexadecimal (64 caracteres)').optional(),
+    CRON_SECRET: z.string().min(16).optional(),
     CAPTURE_MAX_MB: z.coerce.number().min(1).max(25).default(12),
   })
   .superRefine((v, ctx) => {
