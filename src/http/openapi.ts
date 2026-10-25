@@ -4,7 +4,7 @@ import * as s from './schemas.js';
 // Contrato de la API v1 (13). Las entradas se derivan de los esquemas Zod que la API ya usa para validar,
 // así que el contrato no puede divergir de lo que el servidor acepta. Un test comprueba que no falte ninguna ruta.
 interface Doc {
-  method: 'get' | 'post' | 'patch';
+  method: 'get' | 'post' | 'patch' | 'put';
   path: string;
   tag: string;
   summary: string;
@@ -163,6 +163,11 @@ export const ROUTES: Doc[] = [
   D('get', '/reports/monthly/snapshots', 'Reportes', 'Versiones guardadas, con filtro por mes'),
   D('get', '/reports/snapshots/{id}', 'Reportes', 'Una versión guardada con sus números'),
   D('get', '/reports/snapshots/{id}/pdf', 'Reportes', 'PDF de una versión guardada'),
+
+  D('get', '/preferences', 'Preferencias', 'Preferencias con valores por defecto: panel, avisos, captura, bloqueo y respaldos'),
+  D('put', '/preferences', 'Preferencias', 'Reemplaza las secciones enviadas (panel, avisos, captura, bloqueo, respaldos)', { body: s.preferencesPatch }),
+  D('get', '/dashboard', 'Preferencias', 'Panel: solo las tarjetas habilitadas, en el orden elegido, con sus datos'),
+  D('get', '/reminders', 'Preferencias', 'Qué avisar y cuándo (hora local), con texto discreto por defecto'),
   D('get', '/goals', 'Metas', 'Metas de ahorro con avance (lo reservado, no el saldo total)'),
   D('get', '/goals/overview', 'Metas', 'Por cuenta: total, reservado y libre, con aviso si lo reservado supera el saldo'),
   D('post', '/goals', 'Metas', 'Crea una meta (objetivo, fecha opcional)', { body: s.goalCreate, status: 201 }),

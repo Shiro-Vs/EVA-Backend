@@ -14,6 +14,7 @@ import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { bankLoanRoutes } from './routes/bankLoans.js';
+import { preferenceRoutes } from './routes/preferences.js';
 import { reportRoutes } from './routes/reports.js';
 import { captureRoutes, inboundRoutes } from './routes/capture.js';
 import { coreRoutes } from './routes/core.js';
@@ -64,7 +65,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       .header('Access-Control-Expose-Headers', 'ETag, Idempotency-Replayed, X-Request-Id');
     if (req.method === 'OPTIONS') {
       return reply.status(204)
-        .header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+        .header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
         .header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key, If-Match, X-Request-Id')
         .header('Access-Control-Max-Age', '600')
         .send();
@@ -140,6 +141,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       analysisRoutes(v1, deps);
       bankLoanRoutes(v1, deps);
       reportRoutes(v1, deps);
+      preferenceRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );

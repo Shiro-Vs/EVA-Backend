@@ -11663,6 +11663,500 @@
         }
       }
     },
+    "/preferences": {
+      "get": {
+        "tags": [
+          "Preferencias"
+        ],
+        "summary": "Preferencias con valores por defecto: panel, avisos, captura, bloqueo y respaldos",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Preferencias"
+        ],
+        "summary": "Reemplaza las secciones enviadas (panel, avisos, captura, bloqueo, respaldos)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dashboard": {
+                    "type": "object",
+                    "properties": {
+                      "cards": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "enum": [
+                                "accounts_balance",
+                                "credit_debt",
+                                "period_flow",
+                                "budgets",
+                                "goals",
+                                "renewals",
+                                "pending_collections",
+                                "loans",
+                                "capture_pending",
+                                "upcoming_payments"
+                              ]
+                            },
+                            "enabled": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "enabled"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "cards"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "notifications": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "discreet": {
+                        "type": "boolean"
+                      },
+                      "time": {
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      },
+                      "quiet": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                              },
+                              "to": {
+                                "type": "string",
+                                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "repeatOverdue": {
+                        "type": "boolean"
+                      },
+                      "kinds": {
+                        "type": "object",
+                        "properties": {
+                          "renewal": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "leadDays": {
+                                "maxItems": 5,
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 30
+                                }
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "leadDays"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "collection": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "leadDays": {
+                                "maxItems": 5,
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 30
+                                }
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "leadDays"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "recurring": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "leadDays": {
+                                "maxItems": 5,
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 30
+                                }
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "leadDays"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "loan": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "leadDays": {
+                                "maxItems": 5,
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 30
+                                }
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "leadDays"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "budget": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "enabled"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "capture": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "enabled"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "renewal",
+                          "collection",
+                          "recurring",
+                          "loan",
+                          "budget",
+                          "capture"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "discreet",
+                      "time",
+                      "quiet",
+                      "repeatOverdue",
+                      "kinds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "capture": {
+                    "type": "object",
+                    "properties": {
+                      "reviewMode": {
+                        "type": "string",
+                        "enum": [
+                          "individual",
+                          "batch"
+                        ]
+                      },
+                      "duplicates": {
+                        "type": "string",
+                        "enum": [
+                          "separate",
+                          "grouped"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "reviewMode",
+                      "duplicates"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "security": {
+                    "type": "object",
+                    "properties": {
+                      "lockAfterSeconds": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3600
+                      }
+                    },
+                    "required": [
+                      "lockAfterSeconds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "backup": {
+                    "type": "object",
+                    "properties": {
+                      "frequency": {
+                        "type": "string",
+                        "enum": [
+                          "off",
+                          "weekly",
+                          "monthly"
+                        ]
+                      },
+                      "keep": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "const": 1
+                          },
+                          {
+                            "type": "number",
+                            "const": 2
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "frequency",
+                      "keep"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "tags": [
+          "Preferencias"
+        ],
+        "summary": "Panel: solo las tarjetas habilitadas, en el orden elegido, con sus datos",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reminders": {
+      "get": {
+        "tags": [
+          "Preferencias"
+        ],
+        "summary": "Qué avisar y cuándo (hora local), con texto discreto por defecto",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/goals": {
       "get": {
         "tags": [

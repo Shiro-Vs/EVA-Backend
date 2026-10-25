@@ -389,3 +389,7 @@ const idList = z.string().transform((v) => v.split(',').map((x) => x.trim()).fil
 export const monthlyQuery = z.object({ month: monthStr, accountIds: idList.optional(), detail: z.enum(['0', '1']).optional().transform((v) => v === '1') });
 export const monthlySave = z.object({ month: monthStr, accountIds: z.array(uuid).max(20).optional(), detail: z.boolean().optional() }).strict();
 export const snapshotsQuery = z.object({ month: monthStr.optional() });
+
+// ---------- Preferencias, panel y avisos (Entrega 5) ----------
+export { preferencesPatch } from '../domain/preferences.js';
+export const remindersQuery = z.object({ days: z.coerce.number().int().min(1).max(60).default(14) });
