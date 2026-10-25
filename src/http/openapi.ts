@@ -156,6 +156,13 @@ export const ROUTES: Doc[] = [
   D('post', '/bank-loans/{id}/payments/preview', 'Préstamos bancarios', 'Vista previa de un pago real: efecto en la cuenta y en la cuota; no genera mora', { body: s.bankLoanPaymentPreview }),
   D('post', '/bank-loans/{id}/payments', 'Préstamos bancarios', 'Registra un pago real (egreso de una cuenta propia); el desglose es opcional', { body: s.bankLoanPaymentCreate, idempotent: true, status: 201 }),
   D('post', '/bank-loans/payments/{id}/reverse', 'Préstamos bancarios', 'Revierte un pago y reabre su cuota', { body: s.bankLoanPaymentReverse, idempotent: true }),
+
+  D('get', '/reports/monthly', 'Reportes', 'Resumen mensual vivo: flujo de dinero y resultado por conceptos, con las versiones guardadas y si cambió desde la última'),
+  D('get', '/reports/monthly/pdf', 'Reportes', 'PDF del resumen mensual vivo'),
+  D('post', '/reports/monthly/snapshots', 'Reportes', 'Guarda una versión (instantánea) del resumen; si no cambió nada no crea otra', { body: s.monthlySave, status: 201 }),
+  D('get', '/reports/monthly/snapshots', 'Reportes', 'Versiones guardadas, con filtro por mes'),
+  D('get', '/reports/snapshots/{id}', 'Reportes', 'Una versión guardada con sus números'),
+  D('get', '/reports/snapshots/{id}/pdf', 'Reportes', 'PDF de una versión guardada'),
   D('get', '/goals', 'Metas', 'Metas de ahorro con avance (lo reservado, no el saldo total)'),
   D('get', '/goals/overview', 'Metas', 'Por cuenta: total, reservado y libre, con aviso si lo reservado supera el saldo'),
   D('post', '/goals', 'Metas', 'Crea una meta (objetivo, fecha opcional)', { body: s.goalCreate, status: 201 }),

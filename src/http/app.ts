@@ -14,6 +14,7 @@ import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { bankLoanRoutes } from './routes/bankLoans.js';
+import { reportRoutes } from './routes/reports.js';
 import { captureRoutes, inboundRoutes } from './routes/capture.js';
 import { coreRoutes } from './routes/core.js';
 import { financeRoutes } from './routes/finance.js';
@@ -138,6 +139,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       captureRoutes(v1, deps);
       analysisRoutes(v1, deps);
       bankLoanRoutes(v1, deps);
+      reportRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );

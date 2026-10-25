@@ -382,3 +382,10 @@ export const bankLoanPaymentCreate = z.object({
   goalDeductions: z.array(z.object({ goalId: uuid, amount: money }).strict()).max(20).optional(), acceptReserveShortfall: z.boolean().optional(),
 }).strict();
 export const bankLoanPaymentReverse = z.object({ reason: text(200) }).strict();
+
+// ---------- Reportes (Entrega 5) ----------
+const monthStr = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Se espera AAAA-MM');
+const idList = z.string().transform((v) => v.split(',').map((x) => x.trim()).filter(Boolean)).pipe(z.array(uuid).max(20));
+export const monthlyQuery = z.object({ month: monthStr, accountIds: idList.optional(), detail: z.enum(['0', '1']).optional().transform((v) => v === '1') });
+export const monthlySave = z.object({ month: monthStr, accountIds: z.array(uuid).max(20).optional(), detail: z.boolean().optional() }).strict();
+export const snapshotsQuery = z.object({ month: monthStr.optional() });
