@@ -10,6 +10,8 @@ const schema = z
     AUTH_DEV_SECRET: z.string().optional(),
     AUTH_JWKS_URL: z.string().optional(),
     AUTH_ISSUER: z.string().optional(),
+    // Audiencia (aud) esperada en el token. Supabase usa «authenticated».
+    AUTH_AUDIENCE: z.string().default('authenticated'),
     PREVIEW_SECRET: z.string().min(32).optional(),
     // Orígenes permitidos para clientes web (separados por coma). Vacío = sin CORS (la app móvil nativa no lo necesita).
     CORS_ORIGINS: z.string().optional(),

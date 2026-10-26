@@ -15,12 +15,16 @@ export interface Authenticator {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const unauthenticated = () => new AppError(401, 'UNAUTHENTICATED', 'Missing, expired or invalid token');
 
-function toUser(payload: { sub?: string; email?: unknown; name?: unknown }): AuthUser {
+type Claims = { sub?: string; email?: unknown; name?: unknown; role?: unknown; user_metadata?: { full_name?: unknown; name?: unknown } };
+
+function toUser(payload: Claims): AuthUser {
   if (!payload.sub || !UUID_RE.test(payload.sub)) throw unauthenticated();
+  // Supabase guarda el nombre en user_metadata (Google: full_name).
+  const name = [payload.name, payload.user_metadata?.full_name, payload.user_metadata?.name].find((v) => typeof v === 'string' && v.trim() !== '');
   return {
     userId: payload.sub,
     email: typeof payload.email === 'string' ? payload.email : undefined,
-    name: typeof payload.name === 'string' ? payload.name : undefined,
+    name: typeof name === 'string' ? name : undefined,
   };
 }
 
@@ -40,13 +44,18 @@ export function devAuthenticator(secret: string): Authenticator {
   };
 }
 
-/** Staging/producción: verificación con las claves públicas (JWKS) del proveedor de identidad. */
-export function jwksAuthenticator(jwksUrl: string, issuer: string): Authenticator {
+/**
+ * Staging/producción: verificación con las claves públicas (JWKS) del proveedor de identidad.
+ * Exige firma asimétrica (nunca un secreto compartido ni «alg: none»), el emisor y la audiencia correctos,
+ * y que sea el token de una persona autenticada (no la clave pública «anon» del proyecto).
+ */
+export function jwksAuthenticator(jwksUrl: string, issuer: string, audience = 'authenticated'): Authenticator {
   const jwks = createRemoteJWKSet(new URL(jwksUrl));
   return {
     async verify(token) {
       try {
-        const { payload } = await jwtVerify(token, jwks, { issuer });
+        const { payload } = await jwtVerify(token, jwks, { issuer, audience, algorithms: ['ES256', 'RS256', 'EdDSA'] });
+        if (payload.role !== undefined && payload.role !== 'authenticated') throw unauthenticated();
         return toUser(payload);
       } catch (e) {
         if (e instanceof AppError) throw e;
@@ -57,7 +66,7 @@ export function jwksAuthenticator(jwksUrl: string, issuer: string): Authenticato
 }
 
 export function createAuthenticator(env: Env): Authenticator {
-  return env.AUTH_MODE === 'dev' ? devAuthenticator(env.AUTH_DEV_SECRET!) : jwksAuthenticator(env.AUTH_JWKS_URL!, env.AUTH_ISSUER!);
+  return env.AUTH_MODE === 'dev' ? devAuthenticator(env.AUTH_DEV_SECRET!) : jwksAuthenticator(env.AUTH_JWKS_URL!, env.AUTH_ISSUER!, env.AUTH_AUDIENCE);
 }
 
 /** Emite un token de desarrollo. Solo para pruebas y para trabajar en local; nunca en producción. */
