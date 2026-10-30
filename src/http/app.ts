@@ -14,6 +14,7 @@ import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
+import { tipRoutes } from './routes/tips.js';
 import { bankLoanRoutes } from './routes/bankLoans.js';
 import { backupRoutes, jobRoutes } from './routes/backups.js';
 import { accountRoutes } from './routes/account.js';
@@ -149,6 +150,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       financeRoutes(v1, deps);
       captureRoutes(v1, deps);
       analysisRoutes(v1, deps);
+      tipRoutes(v1, deps);
       bankLoanRoutes(v1, deps);
       backupRoutes(v1, deps);
       exportRoutes(v1, deps);

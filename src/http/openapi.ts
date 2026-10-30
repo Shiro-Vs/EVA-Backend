@@ -138,6 +138,8 @@ export const ROUTES: Doc[] = [
 
   D('post', '/analysis/context', 'Análisis', 'Muestra los datos que se enviarían a la IA para un alcance, sin enviarlos ni gastar cuota', { body: s.analysisContext }),
   D('post', '/analysis', 'Análisis', 'Pregunta a la IA sobre el alcance elegido (periodo, cuentas, categorías, servicios); guardar es opcional', { body: s.analysisRun, status: 201 }),
+  D('get', '/tips/today', 'Análisis', 'Consejo del día con IA: uno por día, a partir de tus datos; si ya existe no gasta IA'),
+  D('get', '/tips', 'Análisis', 'Consejos de los últimos días'),
   D('get', '/analysis', 'Análisis', 'Análisis guardados'),
   D('get', '/analysis/{id}', 'Análisis', 'Un análisis guardado'),
   D('post', '/analysis/{id}/delete', 'Análisis', 'Elimina un análisis guardado'),
