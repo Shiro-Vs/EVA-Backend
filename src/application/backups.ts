@@ -21,12 +21,13 @@ const q = (name: string) => sql.id(name);
 
 // ───────────────────────── Catálogo de la base (el respaldo sigue al esquema, no al revés) ─────────────────────────
 
-interface Catalog { order: string[]; columns: Map<string, string[]>; pk: Map<string, string[]>; selfRef: Map<string, { cols: string[]; refCols: string[] }>; latestMigration: string }
+export interface Catalog { order: string[]; columns: Map<string, string[]>; pk: Map<string, string[]>; selfRef: Map<string, { cols: string[]; refCols: string[] }>; latestMigration: string }
 
-async function catalog(trx: Trx): Promise<Catalog> {
+/** Con `all` incluye también bitácora, claves de idempotencia, consumo e informes (necesario para eliminar una cuenta). */
+export async function catalog(trx: Trx, all = false): Promise<Catalog> {
   const tables = (await rows<{ t: string }>(trx, sql`
     select c.relname as t from pg_class c join pg_namespace n on n.oid = c.relnamespace join pg_attribute a on a.attrelid = c.oid and a.attname = 'owner_id' and not a.attisdropped
-    where n.nspname = 'public' and c.relkind = 'r' order by 1`)).map((r) => r.t).filter((t) => !EXCLUDED.has(t) && t !== 'user_profile');
+    where n.nspname = 'public' and c.relkind = 'r' order by 1`)).map((r) => r.t).filter((t) => (all || !EXCLUDED.has(t)) && t !== 'user_profile');
   const set = new Set(tables);
   const fks = await rows<{ child: string; parent: string; cols: string[]; refcols: string[] }>(trx, sql`
     select ch.relname as child, pa.relname as parent,

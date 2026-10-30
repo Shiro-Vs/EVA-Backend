@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as backups from '../../application/backups.js';
 import { purgeExpired } from '../../application/capture.js';
+import { purgeDeletedUsers } from '../../application/account.js';
 import { purgeExpiredExports } from '../../application/exports.js';
 import { todayIn } from '../../domain/localDate.js';
 import { inTx, rows } from '../../infra/db/db.js';
@@ -77,6 +78,7 @@ export function jobRoutes(app: FastifyInstance, deps: HttpDeps) {
       });
     }
     const exportsExpired = await purgeExpiredExports({ db: deps.db, now: deps.now, files: deps.capture.files });
-    return reply.send({ backups: auto, originalsPurged: purged, exportsExpired });
+    const tombstones = await purgeDeletedUsers(deps.db, deps.now());
+    return reply.send({ backups: auto, originalsPurged: purged, exportsExpired, deletedAccountMarksCleared: tombstones });
   });
 }

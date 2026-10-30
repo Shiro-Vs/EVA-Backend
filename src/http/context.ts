@@ -7,6 +7,7 @@ import { todayIn } from '../domain/localDate.js';
 import type { AuthUser, Authenticator } from '../infra/auth/auth.js';
 import { inTx, type DB } from '../infra/db/db.js';
 import { readKey, runIdempotent } from '../infra/idempotency.js';
+import type { IdentityAdmin } from '../infra/auth/admin.js';
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { AppError, fromZod } from './errors.js';
 
@@ -20,6 +21,7 @@ export interface HttpDeps {
   analyst: Analyst;
   backup: { key: Buffer | null };
   exports: { syncMaxRows: number; ttlHours: number };
+  identity: IdentityAdmin;
   cronSecret?: string;
 }
 

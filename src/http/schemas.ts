@@ -411,3 +411,6 @@ export const exportRequest = z.object({
 }).strict();
 export const exportPreview = exportRequest.omit({ format: true }).extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') }).strict();
 export const statementExportQuery = z.object({ format: z.enum(['pdf', 'xlsx', 'csv']).default('pdf') });
+
+// ---------- Eliminar la cuenta (privacidad) ----------
+export const accountDelete = z.object({ previewToken: z.string().min(10), confirm: z.string().trim().min(1).max(60) }).strict();

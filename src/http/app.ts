@@ -8,6 +8,7 @@ import { createDiskStore } from '../infra/capture/files.js';
 import { createGeminiExtractor } from '../infra/capture/gemini.js';
 import { createHeuristicExtractor, createUnavailableExtractor } from '../infra/capture/heuristic.js';
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
+import { createSupabaseAdmin, noIdentityAdmin, type IdentityAdmin } from '../infra/auth/admin.js';
 import { createKysely } from '../infra/db/db.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
@@ -15,6 +16,7 @@ import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { bankLoanRoutes } from './routes/bankLoans.js';
 import { backupRoutes, jobRoutes } from './routes/backups.js';
+import { accountRoutes } from './routes/account.js';
 import { exportRoutes } from './routes/exports.js';
 import { preferenceRoutes } from './routes/preferences.js';
 import { reportRoutes } from './routes/reports.js';
@@ -38,11 +40,12 @@ export interface AppDeps {
   logLevel?: string;
   extractor?: Extractor; // inyectable en pruebas
   analyst?: Analyst;
+  identity?: IdentityAdmin;
   files?: FileStore;
 }
 
 /** Construye la API. La lógica de negocio vive en src/domain y src/application. */
-export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst }: AppDeps): FastifyInstance {
+export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst, identity }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
@@ -125,6 +128,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     },
     backup: { key: env.BACKUP_ENCRYPTION_KEY ? Buffer.from(env.BACKUP_ENCRYPTION_KEY, 'hex') : null },
     cronSecret: env.CRON_SECRET,
+    identity: identity ?? (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? createSupabaseAdmin({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY }) : noIdentityAdmin),
     exports: { syncMaxRows: env.EXPORT_SYNC_MAX_ROWS, ttlHours: env.EXPORT_TTL_HOURS },
     analyst: analyst ?? (env.EXTRACTOR === 'gemini' ? createGeminiAnalyst({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_ANALYSIS_MODEL ?? env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createLocalAnalyst() : createUnavailableAnalyst()),
   };
@@ -148,6 +152,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       bankLoanRoutes(v1, deps);
       backupRoutes(v1, deps);
       exportRoutes(v1, deps);
+      accountRoutes(v1, deps);
       reportRoutes(v1, deps);
       preferenceRoutes(v1, deps);
     },

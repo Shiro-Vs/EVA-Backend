@@ -183,6 +183,8 @@ export const ROUTES: Doc[] = [
   D('get', '/exports', 'Exportaciones', 'Exportaciones recientes'),
   D('get', '/exports/{id}', 'Exportaciones', 'Estado de una exportación'),
   D('get', '/exports/{id}/download', 'Exportaciones', 'Descarga el archivo (vence a las 24 h)'),
+  D('get', '/me/deletion/preview', 'Perfil', 'Qué se eliminaría con la cuenta (filas por tabla y archivos), sin eliminar nada'),
+  D('post', '/me/deletion', 'Perfil', 'Elimina la cuenta y TODOS los datos y archivos; exige la frase de confirmación y la vista previa vigente', { body: s.accountDelete }),
   D('get', '/contacts/{id}/statement/export', 'Exportaciones', 'Estado de cuenta de un contacto como PDF, Excel o CSV (resumen, cargos por servicio y plaza, préstamos)'),
   D('get', '/goals', 'Metas', 'Metas de ahorro con avance (lo reservado, no el saldo total)'),
   D('get', '/goals/overview', 'Metas', 'Por cuenta: total, reservado y libre, con aviso si lo reservado supera el saldo'),

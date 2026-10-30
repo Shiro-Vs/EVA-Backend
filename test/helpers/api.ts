@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { createMemoryStore } from '../../src/infra/capture/files.js';
+import type { IdentityAdmin } from '../../src/infra/auth/admin.js';
 import type { Analyst, Extractor, FileStore } from '../../src/infra/capture/ports.js';
 import { buildApp } from '../../src/http/app.js';
 import { signDevToken } from '../../src/infra/auth/auth.js';
@@ -23,9 +24,9 @@ export interface Api {
 export interface Req { method: 'GET' | 'POST' | 'PATCH'; url: string; token?: string; body?: unknown; headers?: Record<string, string> }
 export interface Res { status: number; body: any; headers: Record<string, any> }
 
-export function makeApi(opts: { extractor?: Extractor; analyst?: Analyst; files?: FileStore; env?: Record<string, string> } = {}): Api {
+export function makeApi(opts: { extractor?: Extractor; analyst?: Analyst; identity?: IdentityAdmin; files?: FileStore; env?: Record<string, string> } = {}): Api {
   let now = REF_NOW;
-  const app = buildApp({ pool, env: testEnv(opts.env), now: () => now, logLevel: 'silent', extractor: opts.extractor, analyst: opts.analyst, files: opts.files ?? createMemoryStore() });
+  const app = buildApp({ pool, env: testEnv(opts.env), now: () => now, logLevel: 'silent', extractor: opts.extractor, analyst: opts.analyst, identity: opts.identity, files: opts.files ?? createMemoryStore() });
 
   const call = async (o: Req): Promise<Res> => {
     const res = await app.inject({

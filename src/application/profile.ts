@@ -25,6 +25,8 @@ export const mapProfile = (r: Row) => ({
 
 /** Crea el perfil en el primer acceso (RN-SE). Idempotente. */
 export async function ensureProfile(trx: Trx, user: AuthUser) {
+  // Una cuenta eliminada no se vuelve a crear con un token que todavía no venció.
+  if (await one(trx, sql`select 1 as x from deleted_user where id = ${user.userId}`)) throw new AppError(401, 'ACCOUNT_DELETED', 'This account was deleted');
   const name = user.name?.trim() || user.email?.split('@')[0] || 'Usuario';
   const created = await one<{ id: string }>(trx, sql<{ id: string }>`
     insert into user_profile (id, display_name, email) values (${user.userId}, ${name}, ${user.email ?? null})

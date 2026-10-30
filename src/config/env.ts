@@ -30,6 +30,9 @@ const schema = z
     // Respaldos: clave opcional AES-256 (64 caracteres hex) y secreto del trabajo programado diario.
     BACKUP_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'Debe ser una clave de 32 bytes en hexadecimal (64 caracteres)').optional(),
     CRON_SECRET: z.string().min(16).optional(),
+    // Para eliminar también al usuario en Supabase Auth al borrar su cuenta (clave de servicio: SOLO en el servidor, nunca en la app).
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
     // Exportaciones: filas máximas para generar en la misma petición (más = en segundo plano) y horas que dura el archivo.
     EXPORT_SYNC_MAX_ROWS: z.coerce.number().int().min(1).default(10000),
     EXPORT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
