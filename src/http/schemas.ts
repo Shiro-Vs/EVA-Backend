@@ -399,3 +399,14 @@ export const backupCreate = z.object({ note: z.string().trim().max(200).optional
 export const backupImport = z.object({ contentBase64: z.string().min(16) }).strict();
 export const restoreMode = z.object({ mode: z.enum(['replace', 'merge']) }).strict();
 export const restoreConfirm = z.object({ mode: z.enum(['replace', 'merge']), previewToken: z.string().min(10) }).strict();
+
+// ---------- Exportaciones (Entrega 6) ----------
+export const exportRequest = z.object({
+  from: isoDate, to: isoDate,
+  accountIds: z.array(uuid).max(20).optional(),
+  sections: z.array(z.enum(['transactions', 'flow', 'income_by_category', 'expense_by_category', 'accounts', 'services', 'contacts', 'loans', 'budgets', 'goals'])).min(1).max(10)
+    .refine((a) => new Set(a).size === a.length, 'Hay secciones repetidas'),
+  level: z.enum(['summary', 'detail']).default('summary'),
+  format: z.enum(['csv', 'xlsx', 'pdf']),
+}).strict();
+export const exportPreview = exportRequest.omit({ format: true }).extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') }).strict();

@@ -21,12 +21,12 @@ export interface MonthlyParams { month: string; accountIds?: string[]; detail?: 
 
 export const FLOW_TYPES = ['income', 'expense', 'service_collection', 'service_payment', 'refund', 'loan', 'card_payment', 'transfer', 'adjustment', 'reversal'] as const;
 type FlowType = (typeof FLOW_TYPES)[number];
-const FLOW_LABEL: Record<FlowType, string> = {
+export const FLOW_LABEL: Record<FlowType, string> = {
   income: 'Ingresos', expense: 'Gastos', service_collection: 'Cobros de servicios compartidos', service_payment: 'Pagos a proveedores de servicios', refund: 'Devoluciones a participantes',
   loan: 'Préstamos (capital e intereses)', card_payment: 'Pagos de tarjeta de crédito', transfer: 'Transferencias entre tus cuentas', adjustment: 'Ajustes y saldos iniciales', reversal: 'Reversiones',
 };
 
-interface Row {
+export interface Row {
   entry_id: string; operation_id: string; account_id: string; account_name: string; amount: string; kind: string; concept: string; status: string; occurred_on: string; occurred_time: string | null;
   description: string; category_id: string | null; category_name: string | null; parent_name: string | null;
   is_receipt: boolean; is_supplier: boolean; is_refund: boolean; is_card_payment: boolean;
@@ -34,7 +34,7 @@ interface Row {
   b_amount: string | null; b_principal: string | null; b_interest: string | null; b_insurance: string | null; b_fees: string | null;
 }
 
-function flowTypeOf(r: Row): FlowType {
+export function flowTypeOf(r: Row): FlowType {
   if (r.kind === 'reversal') return 'reversal';
   if (r.kind === 'adjustment' || r.kind === 'opening' || r.concept === 'reconciliation') return 'adjustment';
   if (r.kind === 'transfer') return r.is_card_payment ? 'card_payment' : 'transfer';
@@ -45,7 +45,7 @@ function flowTypeOf(r: Row): FlowType {
   return r.kind === 'income' ? 'income' : 'expense';
 }
 
-const catLabel = (r: Row) => (r.category_id ? (r.parent_name ? `${r.parent_name} › ${r.category_name}` : r.category_name ?? 'Sin nombre') : 'Sin categoría');
+export const catLabel = (r: Row) => (r.category_id ? (r.parent_name ? `${r.parent_name} › ${r.category_name}` : r.category_name ?? 'Sin nombre') : 'Sin categoría');
 
 function group(map: Map<string, { total: bigint; count: number }>, total: bigint) {
   return [...map.entries()].sort((a, b) => (a[1].total === b[1].total ? a[0].localeCompare(b[0]) : a[1].total > b[1].total ? -1 : 1))
@@ -53,36 +53,11 @@ function group(map: Map<string, { total: bigint; count: number }>, total: bigint
 }
 const bump = (map: Map<string, { total: bigint; count: number }>, k: string, v: bigint) => { const c = map.get(k) ?? { total: 0n, count: 0 }; c.total += v; c.count++; map.set(k, c); };
 
-// ───────────────────────── Cálculo del resumen mensual ─────────────────────────
 
-export function monthRange(month: string) {
-  const mt = /^(\d{4})-(\d{2})$/.exec(month);
-  if (!mt || Number(mt[2]) < 1 || Number(mt[2]) > 12) throw unprocessable('VALIDATION_ERROR', 'El mes debe tener el formato AAAA-MM');
-  const y = Number(mt[1]); const mo = Number(mt[2]);
-  const next = mo === 12 ? fromYMD(y + 1, 1, 1) : fromYMD(y, mo + 1, 1);
-  return { from: formatISO(fromYMD(y, mo, 1)), to: formatISO(next - 1) };
-}
-
-export async function computeMonthly(ctx: Ctx, p: MonthlyParams) {
-  const { from, to } = monthRange(p.month);
-  const cur = toYMD(ctx.today);
-  if (p.month > `${cur.y}-${String(cur.m).padStart(2, '0')}`) throw unprocessable('FUTURE_DATE_NOT_ALLOWED', 'No hay resumen de un mes futuro');
-  const ids = [...new Set(p.accountIds ?? [])].sort();
-  for (const id of ids) await requireOwned(ctx, 'account', id);
+/** Asientos del periodo con todo lo necesario para clasificarlos (08 §1). Los usan el resumen mensual y las exportaciones. */
+export async function fetchEntryRows(ctx: Ctx, from: string, to: string, ids: string[]): Promise<Row[]> {
   const accFilter = ids.length ? sql`and e.account_id in (${sql.join(ids.map((i) => sql`${i}::uuid`))})` : sql``;
-
-  // Saldos de apertura y cierre: suma de asientos hasta la fecha, por cuenta (siempre cuadran con el flujo).
-  const bal = await rows<{ id: string; name: string; type: string; archived: boolean; opening: string; closing: string }>(ctx.trx, sql`
-    select a.id, a.name, a.type, (a.status = 'archived') as archived,
-           coalesce(sum(e.amount) filter (where o.occurred_on < ${from}::date), 0) as opening,
-           coalesce(sum(e.amount) filter (where o.occurred_on <= ${to}::date), 0) as closing
-    from account a left join account_entry e on e.owner_id = a.owner_id and e.account_id = a.id
-         left join financial_operation o on o.owner_id = e.owner_id and o.id = e.operation_id
-    where a.owner_id = ${ctx.ownerId} ${ids.length ? sql`and a.id in (${sql.join(ids.map((i) => sql`${i}::uuid`))})` : sql``}
-    group by a.id, a.name, a.type, a.status order by a.name, a.id`);
-  const accounts = bal.filter((a) => !a.archived || parseMoney(a.opening, { allowNegative: true }) !== 0n || parseMoney(a.closing, { allowNegative: true }) !== 0n);
-
-  const data = await rows<Row>(ctx.trx, sql<Row>`
+  return rows<Row>(ctx.trx, sql<Row>`
     with ledger as (
       select lp.operation_id,
              sum(al.amount) filter (where c.concept = 'principal') as l_principal,
@@ -109,6 +84,44 @@ export async function computeMonthly(ctx: Ctx, p: MonthlyParams) {
     left join bank_loan_payment b on b.owner_id = o.owner_id and b.operation_id = o.id and b.status = 'active'
     where e.owner_id = ${ctx.ownerId} and o.occurred_on between ${from}::date and ${to}::date ${accFilter}
     order by o.occurred_on, o.occurred_time nulls first, o.created_at, e.id`);
+}
+
+// ───────────────────────── Cálculo del resumen mensual ─────────────────────────
+
+export function monthRange(month: string) {
+  const mt = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!mt || Number(mt[2]) < 1 || Number(mt[2]) > 12) throw unprocessable('VALIDATION_ERROR', 'El mes debe tener el formato AAAA-MM');
+  const y = Number(mt[1]); const mo = Number(mt[2]);
+  const next = mo === 12 ? fromYMD(y + 1, 1, 1) : fromYMD(y, mo + 1, 1);
+  return { from: formatISO(fromYMD(y, mo, 1)), to: formatISO(next - 1) };
+}
+
+export async function computeMonthly(ctx: Ctx, p: MonthlyParams) {
+  const { from, to } = monthRange(p.month);
+  const cur = toYMD(ctx.today);
+  if (p.month > `${cur.y}-${String(cur.m).padStart(2, '0')}`) throw unprocessable('FUTURE_DATE_NOT_ALLOWED', 'No hay resumen de un mes futuro');
+  return computeRange(ctx, { from, to, label: p.month, accountIds: p.accountIds, detail: p.detail });
+}
+
+/** El mismo cálculo para cualquier periodo (los informes por mes y las exportaciones comparten reglas). */
+export async function computeRange(ctx: Ctx, p: { from: string; to: string; label: string; accountIds?: string[]; detail?: boolean }) {
+  const { from, to } = p;
+  const ids = [...new Set(p.accountIds ?? [])].sort();
+  for (const id of ids) await requireOwned(ctx, 'account', id);
+  const accFilter = ids.length ? sql`and e.account_id in (${sql.join(ids.map((i) => sql`${i}::uuid`))})` : sql``;
+
+  // Saldos de apertura y cierre: suma de asientos hasta la fecha, por cuenta (siempre cuadran con el flujo).
+  const bal = await rows<{ id: string; name: string; type: string; archived: boolean; opening: string; closing: string }>(ctx.trx, sql`
+    select a.id, a.name, a.type, (a.status = 'archived') as archived,
+           coalesce(sum(e.amount) filter (where o.occurred_on < ${from}::date), 0) as opening,
+           coalesce(sum(e.amount) filter (where o.occurred_on <= ${to}::date), 0) as closing
+    from account a left join account_entry e on e.owner_id = a.owner_id and e.account_id = a.id
+         left join financial_operation o on o.owner_id = e.owner_id and o.id = e.operation_id
+    where a.owner_id = ${ctx.ownerId} ${ids.length ? sql`and a.id in (${sql.join(ids.map((i) => sql`${i}::uuid`))})` : sql``}
+    group by a.id, a.name, a.type, a.status order by a.name, a.id`);
+  const accounts = bal.filter((a) => !a.archived || parseMoney(a.opening, { allowNegative: true }) !== 0n || parseMoney(a.closing, { allowNegative: true }) !== 0n);
+
+  const data = await fetchEntryRows(ctx, from, to, ids);
 
   // ----- Flujo de dinero: todo lo que entró y salió de las cuentas; cuadra con apertura y cierre -----
   const flow = new Map<FlowType, { in: bigint; out: bigint; n: number }>(FLOW_TYPES.map((t) => [t, { in: 0n, out: 0n, n: 0 }]));
@@ -182,7 +195,7 @@ export async function computeMonthly(ctx: Ctx, p: MonthlyParams) {
   })) : undefined;
 
   const result = {
-    period: { month: p.month, from, to },
+    period: { month: p.label, from, to },
     filters: { accountIds: ids, accounts: ids.length ? accounts.map((a) => a.name) : [], detail: !!p.detail },
     accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, opening: m(parseMoney(a.opening, { allowNegative: true })), closing: m(parseMoney(a.closing, { allowNegative: true })), change: m(parseMoney(a.closing, { allowNegative: true }) - parseMoney(a.opening, { allowNegative: true })) })),
     flow: {

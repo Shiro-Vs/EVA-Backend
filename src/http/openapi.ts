@@ -177,6 +177,12 @@ export const ROUTES: Doc[] = [
   D('post', '/backups/{id}/delete', 'Respaldos', 'Elimina el archivo de un respaldo'),
   D('post', '/backups/{id}/restore/preview', 'Respaldos', 'Vista previa de restaurar (reemplazar o incorporar lo que falta), con advertencias y previewToken', { body: s.restoreMode }),
   D('post', '/backups/{id}/restore', 'Respaldos', 'Restaura con copia de recuperación previa; verifica que los saldos coincidan', { body: s.restoreConfirm, idempotent: true }),
+
+  D('post', '/exports/preview', 'Exportaciones', 'Vista previa: filas por sección, las primeras de cada una y si se generará en segundo plano', { body: s.exportPreview }),
+  D('post', '/exports', 'Exportaciones', 'Genera CSV, Excel o PDF con las secciones en el orden elegido; las grandes quedan en cola', { body: s.exportRequest, idempotent: true, status: 201 }),
+  D('get', '/exports', 'Exportaciones', 'Exportaciones recientes'),
+  D('get', '/exports/{id}', 'Exportaciones', 'Estado de una exportación'),
+  D('get', '/exports/{id}/download', 'Exportaciones', 'Descarga el archivo (vence a las 24 h)'),
   D('get', '/goals', 'Metas', 'Metas de ahorro con avance (lo reservado, no el saldo total)'),
   D('get', '/goals/overview', 'Metas', 'Por cuenta: total, reservado y libre, con aviso si lo reservado supera el saldo'),
   D('post', '/goals', 'Metas', 'Crea una meta (objetivo, fecha opcional)', { body: s.goalCreate, status: 201 }),

@@ -19,6 +19,7 @@ export interface HttpDeps {
   capture: { extractor: Extractor; files: FileStore; inboxDomain: string; dailyLimit: number; inboundSecret?: string; maxBytes: number };
   analyst: Analyst;
   backup: { key: Buffer | null };
+  exports: { syncMaxRows: number; ttlHours: number };
   cronSecret?: string;
 }
 
