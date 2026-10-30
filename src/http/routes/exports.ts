@@ -30,6 +30,13 @@ export function exportRoutes(app: FastifyInstance, deps: HttpDeps) {
     }
     return res;
   });
+  // Estado de cuenta de un contacto como documento (PDF, Excel o CSV).
+  app.get('/contacts/:id/statement/export', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const q = parse(s.statementExportQuery, req.query);
+    const f = await withCtx(deps, req, (ctx) => exp.contactStatementExport(ctx, id, q.format));
+    return reply.header('content-type', f.mime).header('content-disposition', `attachment; filename="${f.filename}"`).header('cache-control', 'private, no-store').send(f.bytes);
+  });
   app.get('/exports', async (req) => ({ items: await withCtx(deps, req, (ctx) => exp.listExports(ctx)) }));
   app.get('/exports/:id', async (req) => {
     const { id } = parse(idParam, req.params);

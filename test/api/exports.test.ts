@@ -261,3 +261,29 @@ describe('Generación y vencimiento (08 §6)', () => {
     expect((await api.get(o.u.token, '/exports')).body.items).toEqual([]);
   });
 });
+
+describe('Estado de cuenta de un contacto como documento (08 §3)', () => {
+  it('PDF, Excel y CSV con resumen, cargos y préstamos; solo del dueño', async () => {
+    at('2026-10-07');
+    const u = await api.newUser();
+    await createAccount(api, u.token, 'BCP', '200.00');
+    const svc = await createService(api, u.token, { announcedPrice: '45.00' });
+    const ana = await createContact(api, u.token, 'Ana Ñandú');
+    await joinSeat(api, u.token, svc.id, ana.id, { quota: '20.00' });
+    at('2026-10-12');
+    const get = (token: string, fmt: string) => api.app.inject({ method: 'GET', url: `/v1/contacts/${ana.id}/statement/export?format=${fmt}`, headers: { authorization: `Bearer ${token}` } });
+    const pdf = await get(u.token, 'pdf');
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-disposition']).toContain('estado-de-cuenta-ana-nandu-2026-10-12.pdf');
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+    const xlsx = unzipSync(new Uint8Array((await get(u.token, 'xlsx')).rawPayload));
+    const wb = strFromU8(xlsx['xl/workbook.xml']!);
+    expect(wb).toContain('name="Resumen"');
+    expect(wb).toContain('name="Cargos por servicio y plaza"');
+    expect(strFromU8(xlsx['xl/worksheets/sheet2.xml']!)).toContain('Netflix');
+    const zip = unzipSync(new Uint8Array((await get(u.token, 'csv')).rawPayload));
+    expect(strFromU8(zip['01-resumen.csv']!)).toContain('Ana Ñandú,20.00');
+    const other = await api.newUser();
+    expect((await get(other.token, 'pdf')).statusCode).toBe(404);
+  });
+});

@@ -410,3 +410,4 @@ export const exportRequest = z.object({
   format: z.enum(['csv', 'xlsx', 'pdf']),
 }).strict();
 export const exportPreview = exportRequest.omit({ format: true }).extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') }).strict();
+export const statementExportQuery = z.object({ format: z.enum(['pdf', 'xlsx', 'csv']).default('pdf') });

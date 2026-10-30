@@ -183,6 +183,7 @@ export const ROUTES: Doc[] = [
   D('get', '/exports', 'Exportaciones', 'Exportaciones recientes'),
   D('get', '/exports/{id}', 'Exportaciones', 'Estado de una exportación'),
   D('get', '/exports/{id}/download', 'Exportaciones', 'Descarga el archivo (vence a las 24 h)'),
+  D('get', '/contacts/{id}/statement/export', 'Exportaciones', 'Estado de cuenta de un contacto como PDF, Excel o CSV (resumen, cargos por servicio y plaza, préstamos)'),
   D('get', '/goals', 'Metas', 'Metas de ahorro con avance (lo reservado, no el saldo total)'),
   D('get', '/goals/overview', 'Metas', 'Por cuenta: total, reservado y libre, con aviso si lo reservado supera el saldo'),
   D('post', '/goals', 'Metas', 'Crea una meta (objetivo, fecha opcional)', { body: s.goalCreate, status: 201 }),

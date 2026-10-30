@@ -18,6 +18,7 @@ import { listBankLoans } from './bankLoans.js';
 import { catLabel, computeRange, fetchEntryRows, FLOW_LABEL, flowTypeOf } from './reports.js';
 import { requireOwned } from './operations.js';
 import { cycleCost } from './supplier.js';
+import { contactStatement } from './statement.js';
 
 export const SECTION_IDS = ['transactions', 'flow', 'income_by_category', 'expense_by_category', 'accounts', 'services', 'contacts', 'loans', 'budgets', 'goals'] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -207,15 +208,50 @@ export async function estimateRows(ctx: Ctx, r: ExportRequest): Promise<number> 
 
 const MIME = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' } as const;
 
+/** Entrega las tablas en el formato pedido. `single` es el nombre del archivo cuando es un CSV de una sola tabla. */
+export async function renderTables(ctx: Ctx, o: { format: 'csv' | 'xlsx' | 'pdf'; title: string; subtitle: string; base: string; single?: string }, tables: ExportTable[]) {
+  const meta = { title: o.title, subtitle: o.subtitle, generatedAt: new Date(ctx.nowMs).toISOString() };
+  if (o.format === 'csv') { const p = csvPackage(tables); return { bytes: p.bytes, mime: p.mime, filename: tables.length === 1 ? `${o.single ?? o.base}.csv` : `${o.base}.zip` }; }
+  if (o.format === 'xlsx') return { bytes: toXlsx(tables), mime: MIME.xlsx, filename: `${o.base}.xlsx` };
+  return { bytes: await exportPdf(tables, meta), mime: MIME.pdf, filename: `${o.base}.pdf` };
+}
+
 export async function renderExport(ctx: Ctx, r: ExportRequest, tables: ExportTable[]) {
-  const meta = {
-    title: 'Exportación EVA', generatedAt: new Date(ctx.nowMs).toISOString(),
+  return renderTables(ctx, {
+    format: r.format, title: 'Exportación EVA', base: `eva-${r.from}_${r.to}`, single: tables.length === 1 ? `eva-${tables[0]!.id}-${r.from}_${r.to}` : undefined,
     subtitle: `Periodo ${r.from} a ${r.to} · ${r.accountIds?.length ? `${r.accountIds.length} cuenta(s)` : 'todas las cuentas'} · ${r.level === 'detail' ? 'con detalle' : 'resumen'}`,
-  };
-  const base = `eva-${r.from}_${r.to}`;
-  if (r.format === 'csv') { const p = csvPackage(tables); return { bytes: p.bytes, mime: p.mime, filename: tables.length === 1 ? `eva-${tables[0]!.id}-${r.from}_${r.to}.csv` : `${base}.zip` }; }
-  if (r.format === 'xlsx') return { bytes: toXlsx(tables), mime: MIME.xlsx, filename: `${base}.xlsx` };
-  return { bytes: await exportPdf(tables, meta), mime: MIME.pdf, filename: `${base}.pdf` };
+  }, tables);
+}
+
+const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'contacto';
+
+/** Estado de cuenta de un contacto como documento: resumen, cargos por servicio y plaza, y préstamos (08 §3). */
+export async function contactStatementExport(ctx: Ctx, contactId: string, format: 'csv' | 'xlsx' | 'pdf') {
+  const st = await contactStatement(ctx, contactId);
+  const t = st.totals;
+  const charges = st.services.flatMap((s) => s.charges);
+  const cr = charges.map((c) => ({
+    service: c.subscriptionName, seat: c.seatLabel, from: c.cycle.start, to: c.cycle.end, due: c.dueDate, net: c.net, adjustments: c.adjustments, applied: c.applied, converted: c.converted, pending: c.pending,
+    status: c.pending === '0.00' ? (c.converted !== '0.00' ? 'Convertido a préstamo' : 'Pagado') : c.overdue ? 'Vencido' : 'Pendiente',
+  }));
+  const lr = (st.loans as unknown as Array<{ openedOn: string; principal: string; pending: string; status: string; engine?: string; origin?: string }>).map((l) => ({
+    kind: l.origin === 'debt_conversion' ? 'Deuda convertida' : 'Préstamo', opened: l.openedOn, principal: l.principal, pending: l.pending, status: l.status === 'open' ? 'Abierto' : l.status === 'closed' ? 'Cerrado' : l.status,
+  }));
+  const tables: ExportTable[] = [
+    {
+      id: 'resumen', title: 'Resumen', note: `Al ${st.asOf}. Lo convertido a préstamo se muestra como traslado y no se suma dos veces.`,
+      columns: [col('contact', 'Contacto'), col('pending', 'Pendiente', 'money'), col('overdue', 'Vencido', 'money'), col('creditFree', 'Saldo a favor', 'money'), col('creditReserved', 'Reservado', 'money')],
+      rows: [{ contact: st.contact.name, pending: t.pending, overdue: t.overdue, creditFree: t.creditFree, creditReserved: t.creditReserved }],
+    },
+    {
+      id: 'cargos', title: 'Cargos por servicio y plaza', note: 'Cada cobro repartido aparece en sus aplicaciones sin repetir el importe como varios ingresos.',
+      columns: [col('service', 'Servicio'), col('seat', 'Plaza'), col('from', 'Ciclo desde', 'date'), col('to', 'Hasta', 'date'), col('due', 'Vence', 'date'), col('net', 'Cargo', 'money'), col('adjustments', 'Ajustes', 'money'), col('applied', 'Aplicado', 'money'), col('converted', 'Convertido', 'money'), col('pending', 'Pendiente', 'money'), col('status', 'Estado')],
+      rows: cr, totals: { net: sum(cr, 'net'), applied: sum(cr, 'applied'), pending: sum(cr, 'pending') },
+    },
+  ];
+  if (lr.length) tables.push({ id: 'prestamos', title: 'Préstamos', columns: [col('kind', 'Tipo'), col('opened', 'Desde', 'date'), col('principal', 'Capital', 'money'), col('pending', 'Pendiente', 'money'), col('status', 'Estado')], rows: lr });
+  const base = `estado-de-cuenta-${slug(st.contact.name)}-${st.asOf}`;
+  return renderTables(ctx, { format, title: `Estado de cuenta de ${st.contact.name}`, subtitle: `Al ${st.asOf}`, base }, tables);
 }
 
 /** Vista previa: cuántas filas por sección, las primeras de cada una y si se generará en segundo plano. */
