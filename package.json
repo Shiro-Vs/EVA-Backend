@@ -20,7 +20,8 @@
     "dev:token": "tsx --env-file=.env scripts/dev-token.ts",
     "db:status": "node scripts/pg.mjs status",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
-    "db:reset:dev": "tsx --env-file=.env src/db/reset.ts"
+    "db:reset:dev": "tsx --env-file=.env src/db/reset.ts",
+    "seed:demo": "tsx --env-file=.env scripts/seed/demo.ts"
   },
   "dependencies": {
     "fastify": "^5.12.7",
