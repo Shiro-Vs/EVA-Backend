@@ -25,6 +25,7 @@ const SYSTEM = [
   'Cierra con UNA frase breve solo si hay algo que el usuario deba saber o hacer (por ejemplo gastos sin categoría que se mencionan en "notes"); si no, no agregues nada.',
   'Usa importes con «S/» y dos decimales tal como vienen, nombres de categorías tal como vienen y porcentajes con un decimal como máximo. Lenguaje cotidiano, sin jerga técnica.',
   'No presentes tus cifras como datos bancarios confirmados ni como tasas reales de un préstamo. No puedes confirmar movimientos, modificar deudas ni hacer pagos: si te lo piden, explica que eso se hace en la app.',
+  'Si los DATOS traen "previousPeriod", es el periodo inmediatamente anterior de igual duración: úsalo para comparar (qué subió, qué bajó) citando ambas cifras tal como vienen, sin calcular diferencias nuevas con importes.',
   'Si la pregunta no se puede responder con los datos entregados, dilo y sugiere ampliar el alcance. Responde en español, claro y breve (máximo ~120 palabras), con viñetas si ayuda.',
 ].join('\n');
 
@@ -167,6 +168,14 @@ async function ask(ctx: Ctx, deps: AnalysisDeps, scope: Scope, question: string,
   const used = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from usage_record where owner_id = ${ctx.ownerId} and local_day = ${day}`);
   if (Number(used?.n ?? 0) >= deps.dailyLimit) throw unprocessable('AI_LIMIT_REACHED', 'Se alcanzó el tope diario de tareas de IA; reintenta mañana', { limit: deps.dailyLimit });
   const { context, coverage } = await buildContext(ctx, scope);
+  // El periodo inmediatamente anterior (misma duración y mismos filtros), para poder comparar sin que el usuario tenga que pedirlo.
+  const days = parseISO(scope.to) - parseISO(scope.from) + 1;
+  const prevTo = formatISO(parseISO(scope.from) - 1);
+  const prevFrom = formatISO(parseISO(scope.from) - days);
+  const prev = days <= MAX_DAYS ? await buildContext(ctx, { ...scope, from: prevFrom, to: prevTo }) : null;
+  if (prev && prev.context.totals.movements > 0) {
+    (context as Record<string, unknown>).previousPeriod = { period: prev.context.period, totals: prev.context.totals, byCategory: prev.context.byCategory.slice(0, 10) };
+  }
   let out;
   try {
     out = await deps.analyst.answer({ system: SYSTEM, context, history: history.slice(-10), question });

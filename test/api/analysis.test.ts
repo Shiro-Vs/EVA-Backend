@@ -43,6 +43,26 @@ const ctxOf = async (token: string, scope: Record<string, unknown> = SCOPE) => {
   return r.body as { context: any; coverage: any };
 };
 
+describe('Comparación con el periodo anterior', () => {
+  it('la IA recibe el periodo inmediatamente anterior (misma duración) para comparar; sin movimientos previos no se envía', async () => {
+    const w = await world();
+    await w.op('expense', w.bcp.id, '40.00', '2026-09-25', { description: 'Septiembre' });
+    await w.op('expense', w.bcp.id, '300.00', '2026-10-05', { description: 'Octubre' });
+    const calls = analyst.calls.length;
+    const r = await api.post(w.u.token, '/analysis', { scope: { from: '2026-10-01', to: '2026-10-12' }, question: '¿Cómo voy frente al mes pasado?' });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const ctx = analyst.calls[calls]!.context as any;
+    expect(ctx.totals.expense).toBe('300.00');
+    expect(ctx.previousPeriod.period).toEqual({ from: '2026-09-19', to: '2026-09-30', days: 12 });
+    expect(ctx.previousPeriod.totals.expense).toBe('40.00');
+    expect(ctx.previousPeriod.byCategory[0]).toMatchObject({ total: '40.00' });
+    // antes de ese rango no hay nada: no se envía un periodo anterior vacío
+    const r2 = await api.post(w.u.token, '/analysis', { scope: { from: '2026-09-19', to: '2026-09-30' }, question: '¿Y entonces?' });
+    expect(r2.status, JSON.stringify(r2.body)).toBe(201);
+    expect((analyst.calls[calls + 1]!.context as any).previousPeriod).toBeUndefined();
+  });
+});
+
 describe('Contexto del análisis: lo calcula el servidor (07 §9)', () => {
   it('totales, categorías, meses y cuentas; transferencias y reversiones no cuentan', async () => {
     const w = await world();
