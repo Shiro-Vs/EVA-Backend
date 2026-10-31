@@ -235,6 +235,7 @@ export const ROUTES: Doc[] = [
   D('patch', '/categories/{id}', 'Categorías', 'Renombra o cambia ícono y color (el historial no se rompe)', { body: s.categoryPatch, ifMatch: true }),
   D('post', '/categories/{id}/archive', 'Categorías', 'Archiva la categoría y sus subcategorías'),
   D('post', '/categories/{id}/restore', 'Categorías', 'Restaura una categoría archivada'),
+  D('post', '/categories/{id}/delete', 'Categorías', 'Elimina una categoría sin subcategorías ni uso; si está en uso explica dónde y sugiere archivarla'),
   D('get', '/classification-rules', 'Clasificación', 'Reglas del usuario por prioridad'),
   D('post', '/classification-rules', 'Clasificación', 'Crea una regla (condiciones + acción asignar/sugerir)', { body: s.ruleCreate, status: 201 }),
   D('patch', '/classification-rules/{id}', 'Clasificación', 'Edita una regla (no recategoriza historial)', { body: s.rulePatch, ifMatch: true }),

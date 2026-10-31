@@ -94,6 +94,28 @@ export async function restoreCategory(ctx: Ctx, id: string) {
   return getCategory(ctx, id);
 }
 
+/** Dónde se usa una categoría: cuenta por tabla. Lo que tiene historial o configuración no se borra (se archiva). */
+const USAGE: Array<[string, string]> = [
+  ['financial_operation', 'movimientos'], ['operation_item', 'detalles de movimientos'], ['classification_rule', 'reglas'], ['classification_decision', 'clasificaciones registradas'],
+  ['movement_proposal', 'propuestas de captura'], ['sender_rule', 'reglas por remitente'], ['subscription', 'servicios'], ['budget', 'presupuestos'], ['recurring_template', 'recurrentes'],
+];
+
+/** Elimina una categoría SOLO si no tiene subcategorías ni uso. Si no, explica por qué y sugiere archivarla. */
+export async function deleteCategory(ctx: Ctx, id: string) {
+  const c = await load(ctx, id);
+  const kids = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from category where owner_id = ${ctx.ownerId} and parent_id = ${id}`);
+  if (Number(kids?.n ?? 0) > 0) throw conflict('CATEGORY_HAS_CHILDREN', 'Tiene subcategorías: elimínalas primero o archiva toda la categoría', { children: Number(kids!.n) });
+  const usage: Record<string, number> = {};
+  for (const [table, label] of USAGE) {
+    const r = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from ${sql.table(table)} where owner_id = ${ctx.ownerId} and category_id = ${id}`);
+    if (Number(r?.n ?? 0) > 0) usage[label] = Number(r!.n);
+  }
+  if (Object.keys(usage).length > 0) throw conflict('CATEGORY_IN_USE', 'La categoría está en uso: no se puede eliminar sin romper tu historial. Puedes archivarla', { usage });
+  await sql`delete from category where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'category.delete', entityType: 'category', entityId: id, changes: { name: c.name } });
+  return { id, deleted: true };
+}
+
 /** La categoría debe existir, ser del usuario y estar activa para clasificar con ella. */
 export async function assertActiveCategory(ctx: Ctx, id: string) {
   const c = await one<{ status: string }>(ctx.trx, sql<{ status: string }>`select status from category where owner_id = ${ctx.ownerId} and id = ${id}`);

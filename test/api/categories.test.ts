@@ -162,4 +162,29 @@ describe('Listado de movimientos', () => {
     expect(p2.items.length).toBeGreaterThanOrEqual(2); // incluye el saldo inicial
     expect(p1.items[0]).toMatchObject({ accountId: w.bcp.id, amount: expect.any(String) });
   });
+
+  it('eliminar: solo sin subcategorías ni uso; si no, explica por qué (y archivar sigue disponible)', async () => {
+    const w = await setup();
+    const sub = (await api.post(w.u.token, '/categories', { name: 'Restaurantes', parentId: w.cat('Comida').id })).body;
+    // con subcategorías no se puede
+    const blocked = await api.post(w.u.token, `/categories/${w.cat('Comida').id}/delete`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toMatchObject({ code: 'CATEGORY_HAS_CHILDREN', details: { children: 1 } });
+    // en uso no se puede: dice dónde
+    expect((await spend(w, { categoryId: sub.id })).status).toBe(201);
+    const used = await api.post(w.u.token, `/categories/${sub.id}/delete`);
+    expect(used.status).toBe(409);
+    expect(used.body.error.code).toBe('CATEGORY_IN_USE');
+    expect(used.body.error.details.usage.movimientos).toBe(1);
+    expect((await api.post(w.u.token, `/categories/${sub.id}/archive`)).body.status).toBe('archived');
+    // sin uso y sin hijas sí se elimina, y desaparece del árbol
+    const free = (await api.post(w.u.token, '/categories', { name: 'Temporal' })).body;
+    const ok = await api.post(w.u.token, `/categories/${free.id}/delete`);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body).toEqual({ id: free.id, deleted: true });
+    expect(((await api.get(w.u.token, '/categories')).body.items as any[]).some((c) => c.id === free.id)).toBe(false);
+    // otra persona no puede borrar la tuya
+    const other = await api.newUser();
+    expect((await api.post(other.token, `/categories/${w.cat('Hogar').id}/delete`)).status).toBe(404);
+  });
 });

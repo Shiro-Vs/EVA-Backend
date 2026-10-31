@@ -302,6 +302,10 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => categories.archiveCategory(ctx, id));
   });
+  app.post('/categories/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => categories.deleteCategory(ctx, id));
+  });
   app.post('/categories/:id/restore', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => categories.restoreCategory(ctx, id));
