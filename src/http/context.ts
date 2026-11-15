@@ -9,6 +9,7 @@ import { inTx, type DB } from '../infra/db/db.js';
 import { readKey, runIdempotent } from '../infra/idempotency.js';
 import type { IdentityAdmin } from '../infra/auth/admin.js';
 import type { Mailer } from '../infra/mail.js';
+import type { InboundInbox } from '../infra/resend-inbound.js';
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { AppError, fromZod } from './errors.js';
 
@@ -25,6 +26,8 @@ export interface HttpDeps {
   identity: IdentityAdmin;
   /** Correo saliente y destino de las sugerencias; `null` si no está configurado. */
   mail: { mailer: Mailer | null; suggestionsTo: string | null };
+  /** Correo entrante con Resend: secreto del aviso (Svix) y cliente para leer el correo; sin ambos la ruta no existe. */
+  inbound: { secret?: string; inbox: InboundInbox | null };
   cronSecret?: string;
 }
 

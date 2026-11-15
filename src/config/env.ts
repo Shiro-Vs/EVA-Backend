@@ -39,6 +39,9 @@ const schema = z
     RESEND_API_KEY: z.string().min(10).optional(),
     SUGGESTIONS_TO: z.string().email().optional(),
     MAIL_FROM: z.string().default('EVA <no-reply@eva-app.lat>'),
+    // Correo entrante con Resend: secreto del webhook (whsec_…) y clave para leer correos recibidos (hace falta acceso completo; si se omite se usa RESEND_API_KEY).
+    RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
+    RESEND_RECEIVE_KEY: z.string().min(10).optional(),
     // Exportaciones: filas máximas para generar en la misma petición (más = en segundo plano) y horas que dura el archivo.
     EXPORT_SYNC_MAX_ROWS: z.coerce.number().int().min(1).default(10000),
     EXPORT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),

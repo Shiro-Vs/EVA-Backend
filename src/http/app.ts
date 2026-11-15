@@ -11,6 +11,7 @@ import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { createSupabaseAdmin, noIdentityAdmin, type IdentityAdmin } from '../infra/auth/admin.js';
 import { createKysely } from '../infra/db/db.js';
 import { createResendMailer, type Mailer } from '../infra/mail.js';
+import { createResendInbox, type InboundInbox } from '../infra/resend-inbound.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
@@ -46,10 +47,11 @@ export interface AppDeps {
   identity?: IdentityAdmin;
   files?: FileStore;
   mailer?: Mailer;
+  inbox?: InboundInbox;
 }
 
 /** Construye la API. La lógica de negocio vive en src/domain y src/application. */
-export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst, identity, mailer }: AppDeps): FastifyInstance {
+export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst, identity, mailer, inbox }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
@@ -135,6 +137,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     backup: { key: env.BACKUP_ENCRYPTION_KEY ? Buffer.from(env.BACKUP_ENCRYPTION_KEY, 'hex') : null },
     cronSecret: env.CRON_SECRET,
     identity: identity ?? (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? createSupabaseAdmin({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY }) : noIdentityAdmin),
+    inbound: { secret: env.RESEND_WEBHOOK_SECRET, inbox: inbox ?? ((env.RESEND_RECEIVE_KEY ?? env.RESEND_API_KEY) ? createResendInbox({ apiKey: (env.RESEND_RECEIVE_KEY ?? env.RESEND_API_KEY)! }) : null) },
     exports: { syncMaxRows: env.EXPORT_SYNC_MAX_ROWS, ttlHours: env.EXPORT_TTL_HOURS },
     mail: { mailer: mailer ?? (env.RESEND_API_KEY ? createResendMailer({ apiKey: env.RESEND_API_KEY, from: env.MAIL_FROM }) : null), suggestionsTo: env.SUGGESTIONS_TO ?? null },
     analyst: analyst ?? (env.EXTRACTOR === 'gemini' ? createGeminiAnalyst({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_ANALYSIS_MODEL ?? env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createLocalAnalyst() : createUnavailableAnalyst()),

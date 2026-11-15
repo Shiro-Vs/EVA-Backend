@@ -4,6 +4,7 @@ import { createMemoryStore } from '../../src/infra/capture/files.js';
 import type { IdentityAdmin } from '../../src/infra/auth/admin.js';
 import type { Analyst, Extractor, FileStore } from '../../src/infra/capture/ports.js';
 import type { Mailer } from '../../src/infra/mail.js';
+import type { InboundInbox } from '../../src/infra/resend-inbound.js';
 import { buildApp } from '../../src/http/app.js';
 import { signDevToken } from '../../src/infra/auth/auth.js';
 import { DEV_SECRET, pool, testEnv } from './db.js';
@@ -25,9 +26,9 @@ export interface Api {
 export interface Req { method: 'GET' | 'POST' | 'PATCH'; url: string; token?: string; body?: unknown; headers?: Record<string, string> }
 export interface Res { status: number; body: any; headers: Record<string, any> }
 
-export function makeApi(opts: { extractor?: Extractor; analyst?: Analyst; identity?: IdentityAdmin; files?: FileStore; mailer?: Mailer; env?: Record<string, string> } = {}): Api {
+export function makeApi(opts: { extractor?: Extractor; analyst?: Analyst; identity?: IdentityAdmin; files?: FileStore; mailer?: Mailer; inbox?: InboundInbox; env?: Record<string, string> } = {}): Api {
   let now = REF_NOW;
-  const app = buildApp({ pool, env: testEnv(opts.env), now: () => now, logLevel: 'silent', extractor: opts.extractor, analyst: opts.analyst, identity: opts.identity, files: opts.files ?? createMemoryStore(), mailer: opts.mailer });
+  const app = buildApp({ pool, env: testEnv(opts.env), now: () => now, logLevel: 'silent', extractor: opts.extractor, analyst: opts.analyst, identity: opts.identity, files: opts.files ?? createMemoryStore(), mailer: opts.mailer, inbox: opts.inbox });
 
   const call = async (o: Req): Promise<Res> => {
     const res = await app.inject({

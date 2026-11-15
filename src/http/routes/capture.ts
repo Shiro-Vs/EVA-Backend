@@ -7,6 +7,7 @@ import { inTx } from '../../infra/db/db.js';
 import { AppError } from '../errors.js';
 import { buildCtx, ifMatch, parse, withCtx, withIdempotency, type HttpDeps } from '../context.js';
 import * as s from '../schemas.js';
+import { htmlToText, verifySvix, type ReceivedEvent } from '../../infra/resend-inbound.js';
 
 const idParam = z.object({ id: s.uuid });
 const MIME_OF = { photo: 'image/jpeg', pdf: 'application/pdf', text: 'text/plain' } as const;
@@ -143,6 +144,26 @@ export function captureRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.get('/capture/usage', async (req) => withCtx(deps, req, (ctx) => capture.usageSummary(ctx, cd())));
 }
 
+interface InboundMail { to: string; from?: string; subject?: string; text?: string; messageId?: string; attachments?: Array<{ filename?: string; mime: string; contentBase64: string }> }
+
+/** Procesa un correo ya normalizado: resuelve al dueño por la dirección de recepción y lo manda a la captura. Compartido por todos los proveedores. */
+async function ingestInbound(deps: HttpDeps, b: InboundMail) {
+  const out = await inTx(deps.db, async (trx) => {
+    const ownerId = await capture.ownerOfAddress(trx, b.to);
+    if (!ownerId) return null; // dirección desconocida o revocada: se descarta en silencio (no revela cuáles existen)
+    const ctx = { trx, ownerId, actorId: ownerId, today: todayIn(deps.timeZone, deps.now()), nowMs: deps.now().getTime(), previewSecret: deps.previewSecret };
+    const att = b.attachments?.find((a) => ALLOWED.test(a.mime) && !a.mime.startsWith('text/'));
+    const bytes = att ? decode(att.contentBase64) : null;
+    if (!bytes && !(b.text && b.text.trim())) return { accepted: false as const };
+    const doc = await capture.ingest(ctx, deps.capture, { origin: 'email', mime: att?.mime ?? 'text/plain', filename: att?.filename, bytes, text: b.text, subject: b.subject, sender: b.from, messageId: b.messageId });
+    return { accepted: true as const, documentId: doc.id, duplicate: doc.duplicate };
+  });
+  return out ?? { accepted: false as const };
+}
+
+/** «Yape <notificaciones@yape.pe>» → «notificaciones@yape.pe» (minúsculas). */
+const addressOf = (v: string) => (/<([^>]+)>/.exec(v)?.[1] ?? v).trim().toLowerCase();
+
 /**
  * Correo entrante (D-52): el proveedor de correo, cualquiera que sea, reenvía aquí un JSON normalizado.
  * No usa el token del usuario: se autentica con un secreto compartido y resuelve al propietario por la dirección de recepción.
@@ -155,16 +176,43 @@ export function inboundRoutes(app: FastifyInstance, deps: HttpDeps) {
     const want = Buffer.from(secret);
     if (given.length !== want.length || !timingSafeEqual(given, want)) throw new AppError(401, 'UNAUTHENTICATED', 'Invalid inbound secret');
     const b = parse(s.captureInboundEmail, req.body);
-    const out = await inTx(deps.db, async (trx) => {
-      const ownerId = await capture.ownerOfAddress(trx, b.to);
-      if (!ownerId) return null; // dirección desconocida o revocada: se descarta en silencio (no revela cuáles existen)
-      const ctx = { trx, ownerId, actorId: ownerId, today: todayIn(deps.timeZone, deps.now()), nowMs: deps.now().getTime(), previewSecret: deps.previewSecret };
-      const att = b.attachments?.find((a) => ALLOWED.test(a.mime) && !a.mime.startsWith('text/'));
-      const bytes = att ? decode(att.contentBase64) : null;
-      if (!bytes && !(b.text && b.text.trim())) return { accepted: false as const };
-      const doc = await capture.ingest(ctx, deps.capture, { origin: 'email', mime: att?.mime ?? 'text/plain', filename: att?.filename, bytes, text: b.text, subject: b.subject, sender: b.from, messageId: b.messageId });
-      return { accepted: true as const, documentId: doc.id, duplicate: doc.duplicate };
+    const out = await ingestInbound(deps, b);
+    return reply.status(202).send(out);
+  });
+
+  // Resend (Receiving): el aviso trae solo metadatos y va firmado (Svix); el contenido se pide a la API de Resend.
+  // Se necesita el cuerpo CRUDO para comprobar la firma, por eso este parser solo vale dentro de esta ruta.
+  void app.register(async (scope) => {
+    scope.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
+    scope.post('/webhooks/resend', async (req, reply) => {
+      const { secret, inbox } = deps.inbound;
+      if (!secret || !inbox) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: req.id } });
+      const raw = typeof req.body === 'string' ? req.body : '';
+      const h = req.headers;
+      const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+      if (!verifySvix({ secret, payload: raw, nowMs: deps.now().getTime(), headers: { id: one(h['svix-id']), timestamp: one(h['svix-timestamp']), signature: one(h['svix-signature']) } })) {
+        throw new AppError(401, 'UNAUTHENTICATED', 'Invalid signature');
+      }
+      let ev: ReceivedEvent;
+      try { ev = JSON.parse(raw) as ReceivedEvent; } catch { throw new AppError(400, 'MALFORMED_REQUEST', 'Invalid JSON'); }
+      if (ev.type !== 'email.received' || !ev.data?.email_id) return reply.send({ ignored: true });
+
+      // Los errores de Resend (red, 5xx) suben como 500: Resend reintenta el aviso, y la deduplicación evita documentos dobles.
+      const mail = await inbox.getEmail(ev.data.email_id);
+      const candidates = [...mail.to, ...(mail.receivedFor ?? []), ...(mail.cc ?? [])].map(addressOf).filter(Boolean);
+      const to = await inTx(deps.db, async (trx) => {
+        for (const c of candidates) if (await capture.ownerOfAddress(trx, c)) return c;
+        return null;
+      });
+      if (!to) return reply.send({ accepted: false });
+
+      let attachments: InboundMail['attachments'];
+      const list = await inbox.listAttachments(mail.id);
+      const pick = list.find((a) => ALLOWED.test(a.contentType) && !a.contentType.startsWith('text/') && a.size > 0 && a.size <= deps.capture.maxBytes && a.downloadUrl);
+      if (pick) attachments = [{ filename: pick.filename, mime: pick.contentType, contentBase64: (await inbox.download(pick.downloadUrl, deps.capture.maxBytes)).toString('base64') }];
+      const text = (mail.text?.trim() ? mail.text : htmlToText(mail.html ?? '')).slice(0, 200_000);
+      const out = await ingestInbound(deps, { to, from: mail.fromHeader ?? mail.from, subject: mail.subject, text, messageId: mail.messageId, attachments });
+      return reply.send(out);
     });
-    return reply.status(202).send(out ?? { accepted: false });
   });
 }

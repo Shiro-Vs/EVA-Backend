@@ -45,3 +45,9 @@ services:
         value: EVA <no-reply@eva-app.lat>
       - key: RESEND_API_KEY
         sync: false
+      - key: INBOX_DOMAIN
+        value: in.eva-app.lat
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_RECEIVE_KEY
+        sync: false
