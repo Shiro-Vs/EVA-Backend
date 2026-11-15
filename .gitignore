@@ -8,3 +8,8 @@ dist/
 coverage/
 .devuser.json
 .storage/
+
+# Configuración local del editor y del asistente (no va al repositorio)
+.claude/
+.vscode/
+.idea/
