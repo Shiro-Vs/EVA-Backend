@@ -33,6 +33,8 @@ const schema = z
     // Para eliminar también al usuario en Supabase Auth al borrar su cuenta (clave de servicio: SOLO en el servidor, nunca en la app).
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+    // Bucket privado de Supabase Storage para los archivos. Sin él se usa el disco (STORAGE_DIR): solo para desarrollo, en Render se borra con cada reinicio.
+    STORAGE_BUCKET: z.string().min(3).optional(),
     // Exportaciones: filas máximas para generar en la misma petición (más = en segundo plano) y horas que dura el archivo.
     EXPORT_SYNC_MAX_ROWS: z.coerce.number().int().min(1).default(10000),
     EXPORT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
@@ -44,6 +46,9 @@ const schema = z
     }
     if (v.EXTRACTOR === 'gemini' && (!v.GEMINI_API_KEY || !v.GEMINI_MODEL)) {
       ctx.addIssue({ code: 'custom', path: ['GEMINI_API_KEY'], message: 'EXTRACTOR=gemini exige GEMINI_API_KEY y GEMINI_MODEL' });
+    }
+    if (v.STORAGE_BUCKET && (!v.SUPABASE_URL || !v.SUPABASE_SERVICE_ROLE_KEY)) {
+      ctx.addIssue({ code: 'custom', path: ['STORAGE_BUCKET'], message: 'STORAGE_BUCKET exige SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY' });
     }
     if (v.AUTH_MODE === 'jwks' && v.DEV_LOGIN_USER_ID) {
       ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN_USER_ID'], message: 'DEV_LOGIN_USER_ID solo es válido con AUTH_MODE=dev' });

@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Env } from '../config/env.js';
 import { createAuthenticator, signDevToken, type Authenticator } from '../infra/auth/auth.js';
 import { createGeminiAnalyst, createLocalAnalyst, createUnavailableAnalyst } from '../infra/capture/analyst.js';
-import { createDiskStore } from '../infra/capture/files.js';
+import { createDiskStore, createSupabaseStore } from '../infra/capture/files.js';
 import { createGeminiExtractor } from '../infra/capture/gemini.js';
 import { createHeuristicExtractor, createUnavailableExtractor } from '../infra/capture/heuristic.js';
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
@@ -52,6 +52,8 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
     genReqId: (req) => (req.headers['x-request-id'] as string | undefined) ?? randomUUID(),
   });
+
+  if (env.AUTH_MODE === 'jwks' && !files && !env.STORAGE_BUCKET) app.log.warn('Sin STORAGE_BUCKET: los archivos se guardan en disco local y se pierden al reiniciar. Configura Supabase Storage.');
 
   app.decorate('routeTable', []);
   app.addHook('onRoute', (r) => {
@@ -121,7 +123,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     previewSecret: env.PREVIEW_SECRET ?? env.AUTH_DEV_SECRET ?? '',
     capture: {
       extractor: extractor ?? (env.EXTRACTOR === 'gemini' ? createGeminiExtractor({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createHeuristicExtractor() : createUnavailableExtractor()),
-      files: files ?? createDiskStore(env.STORAGE_DIR),
+      files: files ?? (env.STORAGE_BUCKET ? createSupabaseStore({ url: env.SUPABASE_URL!, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY!, bucket: env.STORAGE_BUCKET }) : createDiskStore(env.STORAGE_DIR)),
       inboxDomain: env.INBOX_DOMAIN,
       dailyLimit: env.CAPTURE_DAILY_LIMIT,
       inboundSecret: env.INBOUND_SECRET,

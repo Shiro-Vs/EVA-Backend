@@ -33,3 +33,9 @@ services:
         generateValue: true
       - key: BACKUP_ENCRYPTION_KEY
         sync: false
+      - key: SUPABASE_URL
+        value: https://yqwjwgwsojulwvzabkit.supabase.co
+      - key: STORAGE_BUCKET
+        value: eva-files
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
