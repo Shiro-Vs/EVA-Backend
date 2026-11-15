@@ -60,7 +60,11 @@ export function backupRoutes(app: FastifyInstance, deps: HttpDeps) {
  * Trabajo diario (Railway cron u otro): crea las copias automáticas que toquen y elimina los originales de captura vencidos.
  * No usa token de usuario: se autentica con un secreto compartido y nunca ejecuta cobros ni pagos.
  */
-export function jobRoutes(app: FastifyInstance, deps: HttpDeps) {
+export function jobRoutes(root: FastifyInstance, deps: HttpDeps) {
+  // Los servicios de cron (cron-job.org y similares) mandan el POST con un Content-Type que Fastify no entiende (p. ej. form-urlencoded o text/plain)
+  // y sin cuerpo útil: se acepta cualquiera y se ignora el cuerpo. Solo en esta ruta; el resto de la API sigue exigiendo JSON.
+  void root.register(async (app) => {
+  app.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined));
   app.post('/jobs/daily', async (req, reply) => {
     const secret = deps.cronSecret;
     if (!secret) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: req.id } });
@@ -80,5 +84,6 @@ export function jobRoutes(app: FastifyInstance, deps: HttpDeps) {
     const exportsExpired = await purgeExpiredExports({ db: deps.db, now: deps.now, files: deps.capture.files });
     const tombstones = await purgeDeletedUsers(deps.db, deps.now());
     return reply.send({ backups: auto, originalsPurged: purged, exportsExpired, deletedAccountMarksCleared: tombstones });
+  });
   });
 }

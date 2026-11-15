@@ -310,4 +310,19 @@ describe('Copias automáticas (RN-BK03, BK04)', () => {
     expect((await a.call({ method: 'POST', url: '/jobs/daily' })).status).toBe(401);
     await a.app.close();
   });
+
+  it('el trabajo diario acepta el POST de un servicio de cron (Content-Type no JSON, sin cuerpo)', async () => {
+    const a = makeApi({ files, env: { CRON_SECRET: 'secreto-del-trabajo-1234' } });
+    for (const ct of ['application/x-www-form-urlencoded', 'text/plain', 'application/octet-stream']) {
+      const ok = await a.app.inject({ method: 'POST', url: '/jobs/daily', headers: { 'x-cron-secret': 'secreto-del-trabajo-1234', 'content-type': ct } });
+      expect(ok.statusCode).toBe(200);
+      expect(JSON.parse(ok.body)).toHaveProperty('backups');
+      const bad = await a.app.inject({ method: 'POST', url: '/jobs/daily', headers: { 'x-cron-secret': 'incorrecto-incorrecto', 'content-type': ct } });
+      expect(bad.statusCode).toBe(401);
+    }
+    // El resto de la API sigue sin aceptar cualquier Content-Type.
+    const other = await a.app.inject({ method: 'POST', url: '/v1/me', headers: { 'content-type': 'text/plain' }, payload: 'x' });
+    expect([401, 404, 405, 415]).toContain(other.statusCode);
+    await a.app.close();
+  });
 });
