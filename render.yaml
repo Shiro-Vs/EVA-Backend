@@ -1,0 +1,35 @@
+# Despliegue en Render. Las variables marcadas sync:false las escribes tú en el panel de Render (nunca van en el repositorio).
+services:
+  - type: web
+    name: eva-api
+    runtime: node
+    region: virginia
+    plan: free
+    buildCommand: npm ci --include=dev
+    startCommand: npm run start:prod
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: LOG_LEVEL
+        value: info
+      - key: TZ_DEFAULT
+        value: America/Lima
+      - key: AUTH_MODE
+        value: jwks
+      - key: AUTH_JWKS_URL
+        value: https://yqwjwgwsojulwvzabkit.supabase.co/auth/v1/.well-known/jwks.json
+      - key: AUTH_ISSUER
+        value: https://yqwjwgwsojulwvzabkit.supabase.co/auth/v1
+      - key: AUTH_AUDIENCE
+        value: authenticated
+      - key: EXTRACTOR
+        value: none
+      - key: DATABASE_URL
+        sync: false
+      - key: PREVIEW_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: BACKUP_ENCRYPTION_KEY
+        sync: false
