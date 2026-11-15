@@ -17,6 +17,13 @@ export const profilePatch = z.object({
   exitDaysLimit: z.number().int().min(0).max(365).nullable().optional(),
 }).strict();
 
+export const suggestionCreate = z.object({
+  kind: z.enum(['idea', 'problem', 'other']),
+  message: z.string().trim().min(5, 'Escribe al menos 5 caracteres').max(2000, 'Máximo 2000 caracteres'),
+  appVersion: z.string().trim().max(40).optional(),
+  platform: z.string().trim().max(60).optional(),
+}).strict();
+
 export const accountCreate = z.object({
   name: text(60),
   type: z.enum(['bank', 'savings', 'cash', 'wallet', 'credit']),

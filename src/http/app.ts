@@ -10,6 +10,7 @@ import { createHeuristicExtractor, createUnavailableExtractor } from '../infra/c
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { createSupabaseAdmin, noIdentityAdmin, type IdentityAdmin } from '../infra/auth/admin.js';
 import { createKysely } from '../infra/db/db.js';
+import { createResendMailer, type Mailer } from '../infra/mail.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
 import { billingRoutes } from './routes/billing.js';
@@ -20,6 +21,7 @@ import { backupRoutes, jobRoutes } from './routes/backups.js';
 import { accountRoutes } from './routes/account.js';
 import { exportRoutes } from './routes/exports.js';
 import { preferenceRoutes } from './routes/preferences.js';
+import { suggestionRoutes } from './routes/suggestions.js';
 import { reportRoutes } from './routes/reports.js';
 import { captureRoutes, inboundRoutes } from './routes/capture.js';
 import { coreRoutes } from './routes/core.js';
@@ -43,10 +45,11 @@ export interface AppDeps {
   analyst?: Analyst;
   identity?: IdentityAdmin;
   files?: FileStore;
+  mailer?: Mailer;
 }
 
 /** Construye la API. La lógica de negocio vive en src/domain y src/application. */
-export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst, identity }: AppDeps): FastifyInstance {
+export function buildApp({ pool, env, now = () => new Date(), authenticator, logLevel = env.LOG_LEVEL, extractor, files, analyst, identity, mailer }: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: Math.ceil(env.CAPTURE_MAX_MB * 1.4 * 1048576) + 65536, // archivos en base64 (captura)
@@ -133,6 +136,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     cronSecret: env.CRON_SECRET,
     identity: identity ?? (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? createSupabaseAdmin({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY }) : noIdentityAdmin),
     exports: { syncMaxRows: env.EXPORT_SYNC_MAX_ROWS, ttlHours: env.EXPORT_TTL_HOURS },
+    mail: { mailer: mailer ?? (env.RESEND_API_KEY ? createResendMailer({ apiKey: env.RESEND_API_KEY, from: env.MAIL_FROM }) : null), suggestionsTo: env.SUGGESTIONS_TO ?? null },
     analyst: analyst ?? (env.EXTRACTOR === 'gemini' ? createGeminiAnalyst({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_ANALYSIS_MODEL ?? env.GEMINI_MODEL! }) : env.EXTRACTOR === 'heuristic' ? createLocalAnalyst() : createUnavailableAnalyst()),
   };
 
@@ -159,6 +163,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
       accountRoutes(v1, deps);
       reportRoutes(v1, deps);
       preferenceRoutes(v1, deps);
+      suggestionRoutes(v1, deps);
     },
     { prefix: '/v1' },
   );

@@ -8,6 +8,7 @@ import type { AuthUser, Authenticator } from '../infra/auth/auth.js';
 import { inTx, type DB } from '../infra/db/db.js';
 import { readKey, runIdempotent } from '../infra/idempotency.js';
 import type { IdentityAdmin } from '../infra/auth/admin.js';
+import type { Mailer } from '../infra/mail.js';
 import type { Analyst, Extractor, FileStore } from '../infra/capture/ports.js';
 import { AppError, fromZod } from './errors.js';
 
@@ -22,6 +23,8 @@ export interface HttpDeps {
   backup: { key: Buffer | null };
   exports: { syncMaxRows: number; ttlHours: number };
   identity: IdentityAdmin;
+  /** Correo saliente y destino de las sugerencias; `null` si no está configurado. */
+  mail: { mailer: Mailer | null; suggestionsTo: string | null };
   cronSecret?: string;
 }
 

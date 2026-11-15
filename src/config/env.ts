@@ -35,6 +35,10 @@ const schema = z
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
     // Bucket privado de Supabase Storage para los archivos. Sin él se usa el disco (STORAGE_DIR): solo para desarrollo, en Render se borra con cada reinicio.
     STORAGE_BUCKET: z.string().min(3).optional(),
+    // Sugerencias de la app: correo del desarrollador que las recibe y remitente. Sin RESEND_API_KEY la ruta responde 503.
+    RESEND_API_KEY: z.string().min(10).optional(),
+    SUGGESTIONS_TO: z.string().email().optional(),
+    MAIL_FROM: z.string().default('EVA <no-reply@eva-app.lat>'),
     // Exportaciones: filas máximas para generar en la misma petición (más = en segundo plano) y horas que dura el archivo.
     EXPORT_SYNC_MAX_ROWS: z.coerce.number().int().min(1).default(10000),
     EXPORT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),

@@ -20,6 +20,8 @@ export const ROUTES: Doc[] = [
   D('get', '/me', 'Perfil', 'Perfil y preferencias (se crea en el primer acceso)'),
   D('patch', '/me', 'Perfil', 'Actualiza nombre, días gratis predeterminados y límite de baja', { body: s.profilePatch, ifMatch: true }),
 
+  D('post', '/suggestions', 'Perfil', 'Envía una sugerencia o reporte al desarrollador por correo (máx. 5 por hora)', { body: s.suggestionCreate }),
+
   D('get', '/summary', 'Perfil', 'Resumen: saldo total, por cobrar, compromisos y actividad reciente'),
 
   D('get', '/accounts', 'Cuentas', 'Lista de cuentas con saldo calculado'),

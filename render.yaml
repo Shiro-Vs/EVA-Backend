@@ -39,3 +39,9 @@ services:
         value: eva-files
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: SUGGESTIONS_TO
+        value: robert.vs@outlook.com
+      - key: MAIL_FROM
+        value: EVA <no-reply@eva-app.lat>
+      - key: RESEND_API_KEY
+        sync: false
