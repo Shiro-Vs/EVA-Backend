@@ -46,7 +46,6 @@ src/infra/     autenticación, idempotencia, tokens de vista previa, acceso a da
 src/db/        ejecutor de migraciones, Kysely
 src/http/      Fastify: formato de error uniforme, X-Request-Id, health
 test/          integración con PostgreSQL real y pruebas unitarias
-archive/       schema.prisma.old (borrador anterior, solo referencia; no se ejecuta)
 scripts/pg.mjs clúster PostgreSQL local del proyecto
 ```
 
