@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cronograma de EVA</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;   /* white-smoke */
+      --color-ink:     #2d3142;   /* jet-black */
+      --color-muted:   #4f5d75;   /* blue-slate */
+      --color-accent:  #bf4520;   /* burnt-tangerine */
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    /* The SVG holds its readable width (min-width == the viewBox width, so the
+       type ramp is never silently scaled down). This wrapper lets a narrow
+       screen scroll the diagram instead of the whole page. */
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 960px; display: block; }
+    h2 { font-family: var(--font-serif); font-weight: 400; font-size: 1.35rem; letter-spacing: -0.01em; margin: 3rem 0 .35rem; }
+    .sec-note { font-size: .82rem; color: var(--color-muted); max-width: 70ch; line-height: 1.5; margin-bottom: 1rem; }
+    code { font-family: var(--font-mono); font-size: .75rem; }
+    .cards { display: grid; grid-template-columns: 1.2fr 1fr .9fr; gap: 1rem; margin: 0 0 1rem; }
+    .card { background: #fff; border: 1px solid rgba(45,49,66,.12); border-radius: 6px; padding: 1rem 1.1rem; }
+    .card h3 { font-family: var(--font-mono); font-size: .62rem; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: .5rem; }
+    .card p, .card li { font-size: .82rem; line-height: 1.5; }
+    .card ul { padding-left: 1rem; }
+    @media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+    /* Paper has no scrollbar, so the local scroller would clip instead of
+       scroll. Let the diagram scale down to the sheet: smaller but whole
+       beats sharp but cut off. Must come after the svg rule above - a media
+       query adds no specificity, so a later plain rule would win. */
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Cronograma · Diagram Design</p>
+    <h1 style="margin-bottom:1rem">EVA: de la Entrega 0 a las ampliaciones</h1>
+    <div class="cards">
+      <div class="card"><h3>Cómo leerlo</h3><p>El eje mide <b>esfuerzo estimado</b>, no calendario: el plan (<code>15-plan-de-implementacion.md</code>) no tiene fechas porque dependen de tu disponibilidad. Tamaños: S = 0,5 d · M = 1,5 d · L = 4 d · XL = 8 d (dividir antes de empezar). Las entregas van en serie, como pide el principio 3.</p></div>
+      <div class="card"><h3>Compuertas del plan</h3><ul><li>Nada de E2 hasta cerrar la lista de 14 §4.</li><li>No contratar infraestructura hasta que E1 funcione con datos de prueba.</li><li>Datos reales solo tras probar restauración y aislamiento (E5).</li></ul></div>
+      <div class="card"><h3>Qué es estimación mía</h3><p>E0 y E1 usan los tamaños del documento. Para E2 a E7 el documento solo lista bloques; los tamaños son una propuesta mía y conviene revisarlos.</p></div>
+    </div>
+    <h2>1 · Visión general</h2><p class="sec-note">Ocho entregas en serie. E1 es el único objetivo inmediato; E0 arrastra 0.7, la aprobación del prototipo y 0.11 (Supabase).</p><div class="diagram-container"><svg viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-resumen-title gantt-resumen-desc">
+<title id="gantt-resumen-title">Cronograma general de EVA, E0 a E7</title><desc id="gantt-resumen-desc">Ocho entregas en secuencia con su esfuerzo estimado, el avance actual y los hitos que habilitan datos reales.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="276" y1="40" x2="276" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="276" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="324.8421052631579" y1="40" x2="324.8421052631579" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="324.8421052631579" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<line x1="373.6842105263158" y1="40" x2="373.6842105263158" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="373.6842105263158" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">40</text>
+<line x1="422.5263157894737" y1="40" x2="422.5263157894737" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="422.5263157894737" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">60</text>
+<line x1="471.36842105263156" y1="40" x2="471.36842105263156" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="471.36842105263156" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">80</text>
+<line x1="520.2105263157895" y1="40" x2="520.2105263157895" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="520.2105263157895" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">100</text>
+<line x1="569.0526315789474" y1="40" x2="569.0526315789474" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="569.0526315789474" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">120</text>
+<line x1="617.8947368421052" y1="40" x2="617.8947368421052" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="617.8947368421052" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">140</text>
+<line x1="666.7368421052631" y1="40" x2="666.7368421052631" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="666.7368421052631" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">160</text>
+<line x1="715.578947368421" y1="40" x2="715.578947368421" y2="484" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="715.578947368421" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">180</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<rect x="24" y="50" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="63" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">BASE · CIMIENTOS Y PRIMER RECORRIDO</text>
+<line x1="24" y1="104" x2="936" y2="104" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="136" x2="936" y2="136" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<rect x="24" y="138" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="151" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">PRODUCTO · SERVICIOS Y FINANZAS</text>
+<line x1="24" y1="192" x2="936" y2="192" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="224" x2="936" y2="224" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<rect x="24" y="226" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="239" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">IA Y OPERACIÓN</text>
+<line x1="24" y1="280" x2="936" y2="280" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="312" x2="936" y2="312" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<rect x="24" y="314" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="327" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">PLATAFORMAS Y AMPLIACIONES</text>
+<line x1="24" y1="368" x2="936" y2="368" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="400" x2="936" y2="400" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="461.6" y1="40" x2="461.6" y2="492" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4"/>
+<text x="24" y="92" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E0</text>
+<text x="54" y="92" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Diseño técnico</text>
+<rect x="276" y="79" width="36.631578947368425" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="276" y="79" width="36.631578947368425" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<rect x="276" y="79" width="29.305263157894743" height="18" rx="4" fill="rgba(79,93,117,0.30)"/>
+<text x="752" y="92" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">15 d · 80 % · faltan 0.7 y 0.11</text>
+<text x="24" y="124" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E1</text>
+<text x="54" y="124" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Primer recorrido Android</text>
+<rect x="312.63157894736844" y="111" width="152.6315789473684" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="312.63157894736844" y="111" width="152.6315789473684" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<rect x="312.63157894736844" y="111" width="148.05263157894734" height="18" rx="4" fill="rgba(191,69,32,0.32)"/>
+<text x="752" y="124" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">62,5 d · 97 % · falta Android real</text>
+<text x="24" y="180" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E2</text>
+<text x="54" y="180" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Núcleo completo de servicios</text>
+<rect x="465.2631578947369" y="167" width="51.28421052631579" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="465.2631578947369" y="167" width="51.28421052631579" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="180" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">21 d · propuesta</text>
+<text x="24" y="212" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E3</text>
+<text x="54" y="212" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Finanzas completas</text>
+<rect x="516.5473684210526" y="199" width="76.92631578947369" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="516.5473684210526" y="199" width="76.92631578947369" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="212" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">31,5 d · propuesta</text>
+<text x="24" y="268" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E4</text>
+<text x="54" y="268" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Captura y Gemini</text>
+<rect x="593.4736842105262" y="255" width="46.4" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="593.4736842105262" y="255" width="46.4" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="268" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">19 d · propuesta</text>
+<text x="24" y="300" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E5</text>
+<text x="54" y="300" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Operación e informes</text>
+<rect x="639.8736842105263" y="287" width="37.85263157894737" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="639.8736842105263" y="287" width="37.85263157894737" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="300" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">15,5 d · propuesta</text>
+<text x="24" y="356" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E6</text>
+<text x="54" y="356" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">iOS y web</text>
+<rect x="677.7263157894737" y="343" width="23.2" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="677.7263157894737" y="343" width="23.2" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="356" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">9,5 d · propuesta</text>
+<text x="24" y="388" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">E7</text>
+<text x="54" y="388" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Ampliaciones</text>
+<rect x="700.9263157894736" y="375" width="32.96842105263158" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="700.9263157894736" y="375" width="32.96842105263158" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="388" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">13,5 d · propuesta</text>
+<rect x="24" y="402" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="415" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">HITOS Y COMPUERTAS</text>
+<line x1="305.30526315789473" y1="443" x2="305.30526315789473" y2="452" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<polygon points="305.30526315789473,429 312.30526315789473,436 305.30526315789473,443 298.30526315789473,436" fill="#2d3142" stroke="#f5f5f5" stroke-width="1.5"/>
+<rect x="235.30526315789473" y="455" width="140" height="13" rx="2" fill="#f5f5f5"/>
+<text x="305.30526315789473" y="464" fill="#2d3142" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Aprobar prototipo (0.8)</text>
+<line x1="465.2631578947369" y1="443" x2="465.2631578947369" y2="452" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<polygon points="465.2631578947369,429 472.2631578947369,436 465.2631578947369,443 458.2631578947369,436" fill="#bf4520" stroke="#f5f5f5" stroke-width="1.5"/>
+<rect x="393.2631578947369" y="455" width="144" height="13" rx="2" fill="#f5f5f5"/>
+<text x="465.2631578947369" y="464" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Cierre E1 · medir costos</text>
+<line x1="677.7263157894737" y1="443" x2="677.7263157894737" y2="466" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<polygon points="677.7263157894737,429 684.7263157894737,436 677.7263157894737,443 670.7263157894737,436" fill="#2d3142" stroke="#f5f5f5" stroke-width="1.5"/>
+<rect x="575.7263157894737" y="469" width="204" height="13" rx="2" fill="#f5f5f5"/>
+<text x="677.7263157894737" y="478" fill="#2d3142" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Datos reales · restauración probada</text>
+<line x1="700.9263157894736" y1="443" x2="700.9263157894736" y2="452" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<polygon points="700.9263157894736,429 707.9263157894736,436 700.9263157894736,443 693.9263157894736,436" fill="#2d3142" stroke="#f5f5f5" stroke-width="1.5"/>
+<rect x="652.9263157894736" y="455" width="96" height="13" rx="2" fill="#f5f5f5"/>
+<text x="700.9263157894736" y="464" fill="#2d3142" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Web de consulta</text>
+<rect x="399.6" y="496" width="124" height="14" rx="2" fill="#f5f5f5"/>
+<text x="461.6" y="506" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.1em">HOY · 15-OCT-2026</text>
+<line x1="24" y1="516" x2="936" y2="516" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="528" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="537" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="528" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="537" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="528" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="537" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="528" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="537" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+<polygon points="486,527 493,534 486,541 479,534" fill="#2d3142"/>
+<text x="501" y="537" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hito</text>
+</svg></div>
+    <h2>2 · Entrega 0 · Diseño técnico</h2><p class="sec-note">Salida: backend con CI, esquema aplicado desde cero y decisiones confirmadas. Pruebas del backend: 33 de 33.</p><div class="diagram-container"><svg viewBox="0 0 960 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e0-title gantt-e0-desc">
+<title id="gantt-e0-title">Entrega 0, diseño técnico</title><desc id="gantt-e0-desc">Once tareas de la Entrega 0 con su tamaño y estado; quedan 0.7, la aprobación de 0.8 y 0.11.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="369" y1="40" x2="369" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="369" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">2</text>
+<line x1="422" y1="40" x2="422" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="422" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="475" y1="40" x2="475" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="475" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">6</text>
+<line x1="528" y1="40" x2="528" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="528" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="581" y1="40" x2="581" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="581" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="634" y1="40" x2="634" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="634" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="687" y1="40" x2="687" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="687" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">14</text>
+<line x1="740" y1="40" x2="740" y2="400" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="336" x2="936" y2="336" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="368" x2="936" y2="368" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="400" x2="936" y2="400" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.1</text>
+<text x="58" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Confirmar decisiones D-xx</text>
+<rect x="316" y="55" width="13.25" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="13.25" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · 14-oct-2026</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.2</text>
+<text x="58" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">PostgreSQL local + btree_gist</text>
+<rect x="329.25" y="87" width="13.25" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="329.25" y="87" width="13.25" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · PG 18.4</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.3</text>
+<text x="58" y="132" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Crear EVA-Backend</text>
+<rect x="342.5" y="119" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="342.5" y="119" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="132" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.4</text>
+<text x="58" y="164" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Prueba de concepto T-03 (Kysely)</text>
+<rect x="382.25" y="151" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="382.25" y="151" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="164" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · T-03 confirmada</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.5</text>
+<text x="58" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Aplicar SQL de 12 desde cero</text>
+<rect x="422" y="183" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="422" y="183" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · 22 invariantes</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.6</text>
+<text x="58" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">CI del backend</text>
+<rect x="461.75" y="215" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="461.75" y="215" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · sin correr en GitHub</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.7</text>
+<text x="58" y="260" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Revisión de pantallas existentes</text>
+<rect x="501.5" y="247" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="501.5" y="247" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="260" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<text x="24" y="292" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.8</text>
+<text x="58" y="292" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Prototipo de interfaz (5 pantallas)</text>
+<rect x="541.25" y="279" width="106" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="541.25" y="279" width="106" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<rect x="541.25" y="279" width="84.80000000000001" height="18" rx="4" fill="rgba(79,93,117,0.30)"/>
+<text x="752" y="292" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Boceto hecho · falta aprobar</text>
+<text x="24" y="324" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.9</text>
+<text x="58" y="324" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Limpieza del frontend</text>
+<rect x="647.25" y="311" width="13.25" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="647.25" y="311" width="13.25" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="324" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · sin confirmar</text>
+<text x="24" y="356" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.10</text>
+<text x="64" y="356" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Rotar claves si hubo filtración</text>
+<rect x="660.5" y="343" width="13.25" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="660.5" y="343" width="13.25" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="356" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecha · no hacía falta</text>
+<text x="24" y="388" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.11</text>
+<text x="64" y="388" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Supabase staging + JWT real</text>
+<rect x="673.75" y="375" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="673.75" y="375" width="39.75" height="18" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="752" y="388" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueada · URL y clave</text>
+<line x1="24" y1="416" x2="936" y2="416" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="428" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="437" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="428" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="437" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="428" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="437" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="428" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="437" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+    <h2>3 · Entrega 1 · Primer recorrido Android</h2><p class="sec-note">173 pruebas de backend, 39 endpoints y 12 pantallas verificadas en web. Falta la lista manual de 13 pasos en un Android real y el acceso con Supabase.</p><div class="diagram-container"><svg viewBox="0 0 960 448" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e1-title gantt-e1-desc">
+<title id="gantt-e1-title">Entrega 1, primer recorrido Android</title><desc id="gantt-e1-desc">Seis cortes del primer recorrido, ya construidos, y las dos tareas que cierran la entrega.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="376.57142857142856" y1="40" x2="376.57142857142856" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="376.57142857142856" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="437.1428571428571" y1="40" x2="437.1428571428571" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="437.1428571428571" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<line x1="497.7142857142857" y1="40" x2="497.7142857142857" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="497.7142857142857" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">30</text>
+<line x1="558.2857142857142" y1="40" x2="558.2857142857142" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="558.2857142857142" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">40</text>
+<line x1="618.8571428571429" y1="40" x2="618.8571428571429" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="618.8571428571429" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">50</text>
+<line x1="679.4285714285714" y1="40" x2="679.4285714285714" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="679.4285714285714" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">60</text>
+<line x1="740" y1="40" x2="740" y2="388" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">70</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C1</text>
+<text x="54" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Identidad y cuentas</text>
+<rect x="316" y="55" width="57.542857142857144" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="57.542857142857144" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · A27, A22, A28b</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C2</text>
+<text x="54" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Contactos y servicios</text>
+<rect x="373.54285714285714" y="87" width="66.62857142857143" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="373.54285714285714" y="87" width="66.62857142857143" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · calendario, ciclos</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C3</text>
+<text x="54" y="132" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Plazas, cuotas y cargos</text>
+<rect x="440.1714285714286" y="119" width="54.51428571428571" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="440.1714285714286" y="119" width="54.51428571428571" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="132" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · A01 a A05</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C4</text>
+<text x="54" y="164" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Pago al proveedor y costo</text>
+<rect x="494.6857142857143" y="151" width="21.2" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="494.6857142857143" y="151" width="21.2" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="164" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · A14, A18</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C5</text>
+<text x="54" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cobros, reparto, anticipos</text>
+<rect x="515.8857142857142" y="183" width="90.85714285714286" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="515.8857142857142" y="183" width="90.85714285714286" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · A06 a A09</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">C6</text>
+<text x="54" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Estado de cuenta e integración móvil</text>
+<rect x="606.7428571428571" y="215" width="87.82857142857142" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="606.7428571428571" y="215" width="87.82857142857142" height="18" rx="4" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho · verificado en web</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">6.7</text>
+<text x="58" y="260" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cierre: 13 pasos en Android real</text>
+<rect x="694.5714285714286" y="247" width="9.085714285714285" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="694.5714285714286" y="247" width="9.085714285714285" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="260" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente · A01 a A09, A14…</text>
+<text x="24" y="292" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace">0.11</text>
+<text x="64" y="292" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Acceso real con Supabase</text>
+<rect x="694.5714285714286" y="279" width="9.085714285714285" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="694.5714285714286" y="279" width="9.085714285714285" height="18" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="752" y="292" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueada · en paralelo</text>
+<rect x="24" y="306" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="319" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">HITOS Y COMPUERTAS</text>
+<line x1="703.6571428571428" y1="347" x2="703.6571428571428" y2="356" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<polygon points="703.6571428571428,333 710.6571428571428,340 703.6571428571428,347 696.6571428571428,340" fill="#bf4520" stroke="#f5f5f5" stroke-width="1.5"/>
+<rect x="613.6571428571428" y="359" width="180" height="13" rx="2" fill="#f5f5f5"/>
+<text x="703.6571428571428" y="368" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Definición de terminado (01 §6)</text>
+<line x1="24" y1="404" x2="936" y2="404" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="416" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="416" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="416" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="416" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+<polygon points="486,415 493,422 486,429 479,422" fill="#2d3142"/>
+<text x="501" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hito</text>
+</svg></div>
+    <h2>4 · Entrega 2 · Núcleo completo de servicios</h2><p class="sec-note">Pruebas: A08b, A10 a A13, A15, A16, A24. Previo: migración <code>0101</code>.</p><div class="diagram-container"><svg viewBox="0 0 960 364" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e2-title gantt-e2-desc">
+<title id="gantt-e2-title">Entrega 2, núcleo completo de servicios</title><desc id="gantt-e2-desc">Ocho bloques de la Entrega 2 tras la migración 0101.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="354.54545454545456" y1="40" x2="354.54545454545456" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="354.54545454545456" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">2</text>
+<line x1="393.0909090909091" y1="40" x2="393.0909090909091" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="393.0909090909091" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="431.6363636363636" y1="40" x2="431.6363636363636" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="431.6363636363636" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">6</text>
+<line x1="470.1818181818182" y1="40" x2="470.1818181818182" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="470.1818181818182" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="508.72727272727275" y1="40" x2="508.72727272727275" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="508.72727272727275" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="547.2727272727273" y1="40" x2="547.2727272727273" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="547.2727272727273" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="585.8181818181818" y1="40" x2="585.8181818181818" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="585.8181818181818" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">14</text>
+<line x1="624.3636363636364" y1="40" x2="624.3636363636364" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="624.3636363636364" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<line x1="662.909090909091" y1="40" x2="662.909090909091" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="662.909090909091" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">18</text>
+<line x1="701.4545454545455" y1="40" x2="701.4545454545455" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="701.4545454545455" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<line x1="740" y1="40" x2="740" y2="304" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">22</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Migración 0101</text>
+<rect x="316" y="55" width="9.636363636363637" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="9.636363636363637" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">S · 0,5 d · previo</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cortesías</text>
+<rect x="325.6363636363636" y="87" width="28.90909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="325.6363636363636" y="87" width="28.90909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="132" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cambio de cuota/precio con ajustes</text>
+<rect x="354.54545454545456" y="119" width="77.0909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="354.54545454545456" y="119" width="77.0909090909091" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="132" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d · mayor riesgo</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="164" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cambios de calendario</text>
+<rect x="431.6363636363636" y="151" width="77.0909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="431.6363636363636" y="151" width="77.0909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="164" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Bajas y devoluciones con vista previa</text>
+<rect x="508.72727272727275" y="183" width="77.0909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="508.72727272727275" y="183" width="77.0909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Deuda a préstamo mínimo</text>
+<rect x="585.8181818181818" y="215" width="28.90909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="585.8181818181818" y="215" width="28.90909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="260" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Cambio a individual</text>
+<rect x="614.7272727272727" y="247" width="28.90909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="614.7272727272727" y="247" width="28.90909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="260" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="292" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="292" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Correcciones y reversiones con efectos</text>
+<rect x="643.6363636363636" y="279" width="77.0909090909091" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="643.6363636363636" y="279" width="77.0909090909091" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="292" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<line x1="24" y1="320" x2="936" y2="320" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="332" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="341" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="332" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="341" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="332" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="341" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="332" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="341" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+    <h2>5 · Entrega 3 · Finanzas completas</h2><p class="sec-note">Pruebas: A19 a A21. Previo: migración de E3.</p><div class="diagram-container"><svg viewBox="0 0 960 396" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e3-title gantt-e3-desc">
+<title id="gantt-e3-title">Entrega 3, finanzas completas</title><desc id="gantt-e3-desc">Nueve bloques de la Entrega 3, con préstamos como mayor esfuerzo.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="369" y1="40" x2="369" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="369" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="422" y1="40" x2="422" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="422" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="475" y1="40" x2="475" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="475" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="528" y1="40" x2="528" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="528" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<line x1="581" y1="40" x2="581" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="581" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<line x1="634" y1="40" x2="634" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="634" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">24</text>
+<line x1="687" y1="40" x2="687" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="687" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">28</text>
+<line x1="740" y1="40" x2="740" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">32</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="336" x2="936" y2="336" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Migración E3</text>
+<rect x="316" y="55" width="6.625" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="6.625" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">S · 0,5 d · previo</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Ingresos, gastos y transferencias</text>
+<rect x="322.625" y="87" width="53" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="322.625" y="87" width="53" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="132" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Categorías y motor de reglas</text>
+<rect x="375.625" y="119" width="53" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="375.625" y="119" width="53" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="132" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="164" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Préstamos completos y bancarios</text>
+<rect x="428.625" y="151" width="106" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="428.625" y="151" width="106" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="164" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">XL · 8 d · dividir antes</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Tarjeta y estados de cuenta</text>
+<rect x="534.625" y="183" width="53" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="534.625" y="183" width="53" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Presupuestos (incluye servicios)</text>
+<rect x="587.625" y="215" width="53" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="587.625" y="215" width="53" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="260" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Metas</text>
+<rect x="640.625" y="247" width="19.875" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="640.625" y="247" width="19.875" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="260" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="292" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="292" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Recurrencias</text>
+<rect x="660.5" y="279" width="19.875" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="660.5" y="279" width="19.875" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="292" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="324" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="324" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Conciliación</text>
+<rect x="680.375" y="311" width="53" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="680.375" y="311" width="53" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="324" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<line x1="24" y1="352" x2="936" y2="352" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="364" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="364" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="364" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="364" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+    <h2>6 · Entrega 4 · Captura y Gemini</h2><p class="sec-note">Prueba: A22 (E4). Previo: elegir proveedor de correo y modelo. Gemini tiene facturación propia.</p><div class="diagram-container"><svg viewBox="0 0 960 396" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e4-title gantt-e4-desc">
+<title id="gantt-e4-title">Entrega 4, captura y Gemini</title><desc id="gantt-e4-desc">Nueve bloques de captura asistida por IA y correo entrante.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="358.4" y1="40" x2="358.4" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="358.4" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">2</text>
+<line x1="400.8" y1="40" x2="400.8" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="400.8" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="443.2" y1="40" x2="443.2" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="443.2" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">6</text>
+<line x1="485.6" y1="40" x2="485.6" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="485.6" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="528" y1="40" x2="528" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="528" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="570.4" y1="40" x2="570.4" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="570.4" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="612.8" y1="40" x2="612.8" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="612.8" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">14</text>
+<line x1="655.2" y1="40" x2="655.2" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="655.2" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<line x1="697.5999999999999" y1="40" x2="697.5999999999999" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="697.5999999999999" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">18</text>
+<line x1="740" y1="40" x2="740" y2="336" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="336" x2="936" y2="336" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Elegir proveedor de correo y modelo</text>
+<rect x="316" y="55" width="10.6" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="10.6" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">S · 0,5 d · previo</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Dirección de recepción</text>
+<rect x="326.6" y="87" width="31.799999999999997" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="326.6" y="87" width="31.799999999999997" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="132" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Correo, foto y PDF</text>
+<rect x="358.4" y="119" width="84.8" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="358.4" y="119" width="84.8" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="132" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d · núcleo de captura</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="164" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Bandeja de propuestas</text>
+<rect x="443.2" y="151" width="84.8" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="443.2" y="151" width="84.8" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="164" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Detección de duplicados</text>
+<rect x="528" y="183" width="31.799999999999997" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="528" y="183" width="31.799999999999997" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Reglas por remitente</text>
+<rect x="559.8" y="215" width="31.799999999999997" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="559.8" y="215" width="31.799999999999997" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="260" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Captura por lote</text>
+<rect x="591.5999999999999" y="247" width="31.799999999999997" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="591.5999999999999" y="247" width="31.799999999999997" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="260" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="292" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="292" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Análisis y chat</text>
+<rect x="623.4" y="279" width="84.8" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="623.4" y="279" width="84.8" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="292" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="324" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="324" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Límite de uso (usage_record)</text>
+<rect x="708.2" y="311" width="10.6" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="708.2" y="311" width="10.6" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="324" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">S · 0,5 d</text>
+<line x1="24" y1="352" x2="936" y2="352" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="364" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="364" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="364" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="364" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="373" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+    <h2>7 · Entrega 5 · Operación e informes</h2><p class="sec-note">Pruebas: A23, A25, A26. Al cerrarla se puede pasar a datos reales.</p><div class="diagram-container"><svg viewBox="0 0 960 332" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e5-title gantt-e5-desc">
+<title id="gantt-e5-title">Entrega 5, operación e informes</title><desc id="gantt-e5-desc">Siete bloques de operación; los respaldos habilitan los datos reales.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="369" y1="40" x2="369" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="369" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">2</text>
+<line x1="422" y1="40" x2="422" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="422" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="475" y1="40" x2="475" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="475" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">6</text>
+<line x1="528" y1="40" x2="528" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="528" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="581" y1="40" x2="581" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="581" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="634" y1="40" x2="634" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="634" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="687" y1="40" x2="687" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="687" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">14</text>
+<line x1="740" y1="40" x2="740" y2="272" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<line x1="24" y1="80" x2="936" y2="80" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="112" x2="936" y2="112" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="144" x2="936" y2="144" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="176" x2="936" y2="176" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="208" x2="936" y2="208" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="240" x2="936" y2="240" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="272" x2="936" y2="272" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="68" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Resumen mensual vivo y versionado</text>
+<rect x="316" y="55" width="106" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="55" width="106" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="68" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="100" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="100" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Informes en PDF</text>
+<rect x="422" y="87" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="422" y="87" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="100" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="132" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="132" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Panel configurable</text>
+<rect x="461.75" y="119" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="461.75" y="119" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="132" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="164" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="164" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Avisos y recordatorios</text>
+<rect x="501.5" y="151" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="501.5" y="151" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="164" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="196" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="196" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Bloqueo por PIN / biometría</text>
+<rect x="541.25" y="183" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="541.25" y="183" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="196" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="228" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="228" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Caché y modo sin conexión</text>
+<rect x="581" y="215" width="39.75" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="581" y="215" width="39.75" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="228" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="260" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="260" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Respaldos y restauración</text>
+<rect x="620.75" y="247" width="106" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="620.75" y="247" width="106" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="260" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d · habilita datos reales</text>
+<line x1="24" y1="288" x2="936" y2="288" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="300" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="309" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="300" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="309" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="300" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="309" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="300" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="309" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+    <h2>8 · Entregas 6 y 7 · Plataformas y ampliaciones</h2><p class="sec-note">iOS se valida en su propia entrega; la web llega primero de consulta y luego con exportaciones.</p><div class="diagram-container"><svg viewBox="0 0 960 348" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-e6-e7-title gantt-e6-e7-desc">
+<title id="gantt-e6-e7-title">Entregas 6 y 7, plataformas y ampliaciones</title><desc id="gantt-e6-e7-desc">Tres bloques de iOS y web y tres de ampliaciones.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="316" y1="40" x2="316" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="316" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">0</text>
+<line x1="351.3333333333333" y1="40" x2="351.3333333333333" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="351.3333333333333" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">2</text>
+<line x1="386.6666666666667" y1="40" x2="386.6666666666667" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="386.6666666666667" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">4</text>
+<line x1="422" y1="40" x2="422" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="422" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">6</text>
+<line x1="457.33333333333337" y1="40" x2="457.33333333333337" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="457.33333333333337" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">8</text>
+<line x1="492.6666666666667" y1="40" x2="492.6666666666667" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="492.6666666666667" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">10</text>
+<line x1="528" y1="40" x2="528" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="528" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">12</text>
+<line x1="563.3333333333334" y1="40" x2="563.3333333333334" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="563.3333333333334" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">14</text>
+<line x1="598.6666666666667" y1="40" x2="598.6666666666667" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="598.6666666666667" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">16</text>
+<line x1="634" y1="40" x2="634" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="634" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">18</text>
+<line x1="669.3333333333334" y1="40" x2="669.3333333333334" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="669.3333333333334" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">20</text>
+<line x1="704.6666666666667" y1="40" x2="704.6666666666667" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="704.6666666666667" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">22</text>
+<line x1="740" y1="40" x2="740" y2="288" stroke="rgba(45,49,66,0.08)" stroke-width="0.8"/>
+<text x="740" y="28" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">24</text>
+<text x="24" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESFUERZO ESTIMADO · DÍAS</text>
+<text x="752" y="28" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ESTADO</text>
+<line x1="24" y1="38" x2="936" y2="38" stroke="#bfc0c0" stroke-width="0.8"/>
+<rect x="24" y="50" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="63" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ENTREGA 6 · IOS Y WEB</text>
+<line x1="24" y1="104" x2="936" y2="104" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="136" x2="936" y2="136" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="168" x2="936" y2="168" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<rect x="24" y="170" width="912" height="20" rx="3" fill="rgba(45,49,66,0.04)"/>
+<text x="32" y="183" fill="#5a6580" font-size="7" font-weight="500" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">ENTREGA 7 · AMPLIACIONES</text>
+<line x1="24" y1="224" x2="936" y2="224" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="256" x2="936" y2="256" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<line x1="24" y1="288" x2="936" y2="288" stroke="rgba(45,49,66,0.07)" stroke-width="0.8"/>
+<text x="24" y="92" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="92" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Validar iOS</text>
+<rect x="316" y="79" width="26.5" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="316" y="79" width="26.5" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="92" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="124" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="124" fill="#bf4520" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Web de consulta y gráficos</text>
+<rect x="342.5" y="111" width="70.66666666666667" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="342.5" y="111" width="70.66666666666667" height="18" rx="4" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="752" y="124" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="156" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="156" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Exportación CSV, Excel y PDF</text>
+<rect x="413.1666666666667" y="143" width="70.66666666666667" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="413.1666666666667" y="143" width="70.66666666666667" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="156" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="212" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="212" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">USD y conversión</text>
+<rect x="483.83333333333337" y="199" width="70.66666666666667" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="483.83333333333337" y="199" width="70.66666666666667" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="212" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">L · 4 d</text>
+<text x="24" y="244" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="244" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Tipo de cambio informativo</text>
+<rect x="554.5" y="231" width="26.5" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="554.5" y="231" width="26.5" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="244" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">M · 1,5 d</text>
+<text x="24" y="276" fill="#5a6580" font-size="9" font-family="'Geist Mono', ui-monospace, monospace"></text>
+<text x="24" y="276" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', system-ui, sans-serif">Acceso de amigos</text>
+<rect x="581" y="263" width="141.33333333333334" height="18" rx="4" fill="#f5f5f5"/>
+<rect x="581" y="263" width="141.33333333333334" height="18" rx="4" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="752" y="276" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">XL · 8 d · dividir antes</text>
+<line x1="24" y1="304" x2="936" y2="304" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+<rect x="24" y="316" width="22" height="12" rx="3" fill="rgba(79,93,117,0.30)" stroke="#4f5d75" stroke-width="1"/>
+<text x="52" y="325" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Hecho</text>
+<rect x="99" y="316" width="22" height="12" rx="3" fill="rgba(79,93,117,0.06)" stroke="#4f5d75" stroke-width="1"/>
+<text x="127" y="325" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Pendiente</text>
+<rect x="194" y="316" width="22" height="12" rx="3" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="222" y="325" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Bloqueado</text>
+<rect x="289" y="316" width="22" height="12" rx="3" fill="rgba(191,69,32,0.10)" stroke="#bf4520" stroke-width="1"/>
+<text x="317" y="325" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Foco · ruta crítica o riesgo</text>
+</svg></div>
+  </div>
+</body>
+</html>

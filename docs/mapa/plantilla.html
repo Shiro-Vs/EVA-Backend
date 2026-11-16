@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa de EVA</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  /* Paleta 1 · Pizarra de EVA (src/constants/Colors.ts): grises azulados con azul de marca y acento ámbar.
+     Contraste comprobado sobre el papel: muted 6.6, soft 5.2, accent 5.5, link 5.4 (claro); todos > 7.6 (oscuro). */
+  --paper: #F7F9F9;  --paper-2: #ECEFEF;  --card: #FFFFFF;
+  --ink: #06141B;    --ink-strong: #000000;
+  --muted: #4A5C6A;  --soft: #5A6A7E;
+  --accent: #A64A02; --accent-tint: rgba(232,163,23,0.16);
+  --link: #0369B2;
+  --ink-02: rgba(6,20,27,0.02); --ink-03: rgba(6,20,27,0.035); --ink-05: rgba(6,20,27,0.06);
+  --ink-12: rgba(6,20,27,0.12); --ink-20: rgba(6,20,27,0.20); --ink-30: rgba(6,20,27,0.32); --ink-40: rgba(6,20,27,0.42);
+  --muted-10: rgba(74,92,106,0.10);
+  --rule: rgba(6,20,27,0.12);
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+}
+:root[data-theme="dark"] {
+  --paper: #06141B; --paper-2: #11212D; --card: #11212D;
+  --ink: #CCD0CF; --ink-strong: #FFFFFF; --muted: #AEBBC6; --soft: #9BA8AB;
+  --accent: #FBBF24; --accent-tint: rgba(251,191,36,0.12); --link: #68BCFB;
+  --ink-02: rgba(204,208,207,0.03); --ink-03: rgba(204,208,207,0.05); --ink-05: rgba(204,208,207,0.07);
+  --ink-12: rgba(204,208,207,0.12); --ink-20: rgba(204,208,207,0.22); --ink-30: rgba(204,208,207,0.32); --ink-40: rgba(204,208,207,0.42);
+  --muted-10: rgba(174,187,198,0.12); --rule: rgba(204,208,207,0.12);
+}
+html, body { height: 100%; }
+body { font-family: var(--font-sans); background: var(--paper); color: var(--ink); display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---------- barra superior ---------- */
+.barra { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); background: var(--paper); flex-wrap: wrap; }
+.marca { display: flex; align-items: baseline; gap: .6rem; margin-right: auto; }
+.logo { font-family: var(--font-mono); font-weight: 600; letter-spacing: .22em; font-size: .8rem; color: var(--link); }
+.titulo { font-family: var(--font-serif); font-size: 1.45rem; letter-spacing: -0.01em; }
+.tabs { display: flex; gap: .25rem; flex-wrap: wrap; }
+.tabs button, .acciones button, .controles button { font: 500 .82rem var(--font-sans); color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: .45rem .8rem; cursor: pointer; }
+.tabs button:hover, .acciones button:hover { background: var(--ink-05); color: var(--ink); }
+.tabs button[aria-selected="true"] { background: var(--link); color: var(--paper); }
+.acciones { display: flex; gap: .25rem; }
+.acciones button { border-color: var(--rule); }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.subbarra { display: flex; align-items: center; gap: .9rem; padding: .5rem 1rem; border-bottom: 1px solid var(--rule); font-size: .85rem; color: var(--muted); flex-wrap: wrap; min-height: 2.6rem; }
+.subbarra label { font: 500 .66rem var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--soft); }
+.subbarra select { font: 500 .85rem var(--font-sans); color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: .35rem .6rem; max-width: 100%; }
+.subbarra .desc { flex: 1 1 260px; min-width: 0; }
+
+/* ---------- área principal ---------- */
+.area { flex: 1; min-height: 0; display: flex; }
+.visor { position: relative; flex: 1; min-width: 0; overflow: hidden; touch-action: none; cursor: grab; background: var(--paper); user-select: none; -webkit-user-select: none; }
+.visor.mov { cursor: grabbing; }
+.vista, .flujo, .diseno { position: absolute; inset: 0; }
+.vista[hidden], .flujo[hidden], .diseno[hidden] { display: none; }
+svg.mapa { width: 100%; height: 100%; display: block; }
+.controles { display: flex; gap: 6px; margin-left: auto; }
+.controles button { min-width: 36px; height: 36px; padding: 0 .6rem; font-size: 1.1rem; background: var(--card); border: 1px solid var(--rule); color: var(--ink); }
+.controles button.ancho { font-size: .8rem; }
+.controles button:hover { border-color: var(--link); }
+.pista { position: absolute; left: 0; right: 0; bottom: 0; padding: .5rem 1rem; font: 400 .72rem var(--font-mono); color: var(--soft); background: linear-gradient(transparent, var(--paper) 55%); pointer-events: none; }
+
+/* ---------- panel de detalle ---------- */
+.panel { width: 400px; max-width: 46vw; border-left: 1px solid var(--rule); background: var(--card); overflow-y: auto; padding: 1.2rem 1.2rem 2rem; font-size: .88rem; line-height: 1.5; }
+.panel h2 { font-family: var(--font-serif); font-weight: 400; font-size: 1.7rem; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: .15rem; }
+.panel h3 { font: 500 .66rem var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--soft); margin: 1.3rem 0 .45rem; }
+.panel p { color: var(--ink); margin-bottom: .4rem; }
+.panel .sub { font: 400 .78rem var(--font-mono); color: var(--muted); margin-bottom: .6rem; }
+.panel ul, .panel ol { padding-left: 1.1rem; color: var(--muted); }
+.panel li { margin-bottom: .3rem; }
+.panel .tag { display: inline-block; font: 500 .62rem var(--font-mono); letter-spacing: .1em; border: 1px solid var(--ink-40); color: var(--soft); border-radius: 3px; padding: 1px 6px; margin-bottom: .5rem; }
+.panel table { width: 100%; border-collapse: collapse; }
+.panel td { padding: .42rem 0; border-top: 1px solid var(--rule); vertical-align: top; }
+.panel td:first-child { width: 42%; padding-right: .6rem; font-weight: 600; word-break: break-word; }
+.panel td .v { display: block; font: 400 .74rem var(--font-mono); color: var(--muted); word-break: break-word; }
+.panel td .n { display: block; font-size: .74rem; color: var(--soft); }
+.panel .fila-var td:first-child { font: 500 .74rem var(--font-mono); }
+.nivel { display: inline-block; font: 600 .58rem var(--font-mono); letter-spacing: .08em; border-radius: 3px; padding: 1px 6px; margin-top: .2rem; }
+.nivel.b-pub { border: 1px solid var(--muted); color: var(--muted); }
+.nivel.b-sec { border: 1px solid var(--accent); color: var(--accent); background: var(--accent-tint); }
+.nivel.b-loc { border: 1px dashed var(--soft); color: var(--soft); }
+.panel .ir { font: inherit; color: var(--link); background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
+.panel .lista-piezas { list-style: none; padding: 0; }
+.panel .lista-piezas li { margin: 0; }
+.panel .lista-piezas button { width: 100%; font: 500 .85rem var(--font-sans); color: var(--ink); background: none; border: none; border-top: 1px solid var(--rule); padding: .5rem 0; text-align: left; cursor: pointer; display: flex; justify-content: space-between; gap: .6rem; }
+.panel .lista-piezas button:hover { color: var(--link); }
+.panel .lista-piezas small { font: 400 .72rem var(--font-mono); color: var(--soft); }
+.panel .pasos li { color: var(--ink); }
+.panel .pasos li small { display: block; font: 400 .72rem var(--font-mono); color: var(--soft); }
+.panel .cerrar { font: 500 .78rem var(--font-sans); color: var(--muted); background: none; border: 1px solid var(--rule); border-radius: 6px; padding: .25rem .6rem; cursor: pointer; float: right; margin-left: .5rem; }
+.panel .nota { background: var(--accent-tint); border-left: 3px solid var(--accent); border-radius: 4px; padding: .5rem .7rem; margin-top: .5rem; color: var(--ink); }
+
+/* ---------- SVG (clases para que sirvan en claro y oscuro) ---------- */
+.fondo { fill: var(--paper); }
+.zona rect:first-child { fill: var(--ink-02); stroke: var(--ink-20); stroke-width: 1; stroke-dasharray: 4 4; }
+.zmask { fill: var(--paper); }
+.eyebrow { font: 500 9px var(--font-mono); letter-spacing: .16em; fill: var(--soft); }
+.nodo { cursor: pointer; transition: opacity .15s; }
+.nodo .mask { fill: var(--paper); }
+.nodo .caja { fill: var(--card); stroke: var(--ink); stroke-width: 1; transition: stroke-width .12s; }
+.nodo.k-focal .caja { fill: var(--accent-tint); stroke: var(--accent); }
+.nodo.k-store .caja { fill: var(--ink-05); stroke: var(--muted); }
+.nodo.k-external .caja { fill: var(--ink-03); stroke: var(--ink-30); }
+.nodo.k-input .caja { fill: var(--muted-10); stroke: var(--soft); }
+.nodo.k-optional .caja { fill: var(--ink-02); stroke: var(--ink-20); stroke-dasharray: 4 3; }
+.nodo.k-security .caja { fill: var(--accent-tint); stroke: var(--accent); stroke-dasharray: 4 4; }
+.nodo:hover .caja, .nodo:focus-visible .caja { stroke-width: 2.2; }
+.nodo:focus-visible { outline: none; }
+.nodo.sel .caja { stroke: var(--link); stroke-width: 3; }
+.nodo .chip { fill: transparent; stroke: var(--ink-40); stroke-width: .8; }
+.nodo .tag { font: 500 8px var(--font-mono); letter-spacing: .08em; fill: var(--soft); }
+.nodo .nombre, .nombre { font-family: var(--font-sans); font-weight: 600; fill: var(--ink); }
+.nodo .sub, .sub { font-family: var(--font-mono); fill: var(--muted); }
+.artefacto { fill: var(--ink-05); stroke: var(--muted); stroke-width: .8; }
+.art { font-family: var(--font-mono); fill: var(--ink); }
+.ar { fill: none; stroke-width: 1.5; stroke-linecap: round; }
+.ar-muted { stroke: var(--muted); } .ar-accent { stroke: var(--accent); stroke-width: 2.2; } .ar-link { stroke: var(--link); }
+.ar.dash { stroke-dasharray: 5 4; }
+.mk-muted { fill: var(--muted); } .mk-accent { fill: var(--accent); } .mk-link { fill: var(--link); }
+.mk-open { fill: none; stroke: var(--muted); stroke-width: 1.3; }
+.lmask { fill: var(--paper); }
+.albl { font: 500 10px var(--font-mono); letter-spacing: .06em; fill: var(--soft); }
+.msg { font: 400 11.5px var(--font-sans); fill: var(--ink); }
+.vida { stroke: var(--ink-20); stroke-width: 1; stroke-dasharray: 3 5; }
+.paso circle { fill: var(--paper); stroke: var(--soft); stroke-width: 1; }
+.paso text { font: 600 10px var(--font-mono); fill: var(--muted); }
+.nota rect { fill: var(--ink-03); stroke: var(--ink-12); }
+.lrule { stroke: var(--ink-12); stroke-width: 1; }
+.leg { font: 400 11px var(--font-sans); fill: var(--muted); }
+.leyenda-caja { pointer-events: none; }
+.badge { stroke-width: 1; fill: none; }
+rect.b-pub { stroke: var(--muted); } rect.b-sec { stroke: var(--accent); fill: var(--accent-tint); } rect.b-loc { stroke: var(--soft); stroke-dasharray: 2 2; }
+.badge-t { font: 600 8px var(--font-mono); letter-spacing: .08em; fill: var(--muted); }
+text.b-sec { fill: var(--accent); } text.b-loc { fill: var(--soft); }
+.fila-n { font: 600 12.5px var(--font-sans); fill: var(--ink); }
+.fila-n.env { font: 500 10.5px var(--font-mono); }
+.fila-v { font: 400 11px var(--font-mono); fill: var(--muted); }
+.llega { font-family: var(--font-sans); font-weight: 500; fill: var(--accent); }
+.fila-t { font-family: var(--font-sans); }
+.tarjeta { cursor: pointer; }
+/* al elegir una pieza, lo demás se atenúa para ver sus conexiones */
+.mapa.foco .nodo:not(.rel):not(.sel) { opacity: .3; }
+.mapa.foco .arista:not(.hl) { opacity: .15; }
+.mapa.foco .arista.hl .ar { stroke-width: 2.4; }
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .area { flex-direction: column; min-height: 0; }
+  .visor { min-height: 62vh; flex: none; height: 62vh; }
+  .panel { width: auto; max-width: none; border-left: none; border-top: 1px solid var(--rule); }
+}
+@media (prefers-reduced-motion: reduce) { .nodo, .nodo .caja { transition: none; } }
+@media print {
+  body { overflow: visible; } .barra, .subbarra, .controles, .pista, .panel { display: none; }
+  .visor { position: static; } .vista, .flujo, .diseno { position: static; }
+}
+</style>
+</head>
+<body>
+<noscript><p style="padding:.8rem 1rem;background:#fff3cd;color:#3b2a00;font:500 .85rem sans-serif">Este mapa es interactivo y necesita JavaScript. Sin él solo se ve el mapa del sistema, sin zoom ni detalle.</p></noscript>
+<header class="barra">
+  <div class="marca"><span class="logo">EVA</span><span class="titulo">Mapa del sistema</span></div>
+  <nav class="tabs" role="tablist" aria-label="Vistas del mapa">
+    <button role="tab" data-vista="sistema" aria-selected="true">Sistema</button>
+    <button role="tab" data-vista="flujos" aria-selected="false">Cómo se hablan</button>
+    <button role="tab" data-vista="inventario" aria-selected="false">Cuentas y variables</button>
+    <button role="tab" data-vista="publicacion" aria-selected="false">Publicar cambios</button>
+    <button role="tab" data-vista="diseno" aria-selected="false">Diseño</button>
+    <button role="tab" data-vista="pendientes" aria-selected="false">Qué falta</button>
+  </nav>
+  <div class="acciones"><button id="btn-tema" aria-label="Cambiar entre tema claro y oscuro">Tema</button></div>
+</header>
+<div class="subbarra" id="subbarra">
+  <span class="desc" id="desc-vista"></span>
+  <span id="caja-flujo" hidden><label for="sel-flujo">Flujo</label> <select id="sel-flujo">%%OPCIONES%%</select></span>
+  <span id="caja-diseno" hidden><label for="sel-diseno">Diagrama</label> <select id="sel-diseno">%%OPC_DISENO%%</select></span>
+  <div class="controles" role="group" aria-label="Zoom">
+    <button id="z-mas" aria-label="Acercar">+</button>
+    <button id="z-menos" aria-label="Alejar">−</button>
+    <button id="z-fit" class="ancho" aria-label="Ajustar a la pantalla">Ajustar</button>
+  </div>
+</div>
+<main class="area">
+  <section class="visor" id="visor" tabindex="0" aria-label="Mapa interactivo: rueda para acercar, arrastra para mover, clic en una pieza para ver su detalle">
+    <div class="vista" id="vista-sistema">%%V_SISTEMA%%</div>
+    <div class="vista" id="vista-flujos" hidden>%%V_FLUJOS%%</div>
+    <div class="vista" id="vista-inventario" hidden>%%V_INVENTARIO%%</div>
+    <div class="vista" id="vista-publicacion" hidden>%%V_PUBLICACION%%</div>
+    <div class="vista" id="vista-diseno" hidden>%%V_DISENO%%</div>
+    <div class="vista" id="vista-pendientes" hidden>%%V_PENDIENTES%%</div>
+    <div class="pista">Rueda o pellizco: zoom · Arrastra: mover · Clic en una pieza: detalle · Doble clic: acercar · Generado el %%FECHA%%</div>
+  </section>
+  <aside class="panel" id="panel" aria-live="polite"><div id="panel-cuerpo"></div></aside>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var DATA = %%DATA%%;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var NIVEL = { publico: ["PÚBLICO", "b-pub"], secreto: ["SECRETO", "b-sec"], local: ["LOCAL", "b-loc"] };
+  var DESC = {
+    sistema: "Las piezas de EVA y cómo se hablan mientras funciona. Clic en una pieza para ver qué es, dónde vive y qué variables usa.",
+    flujos: "Paso a paso de lo que pasa entre las piezas en cada situación: registrarse, entrar, subir un comprobante, enviar una sugerencia…",
+    inventario: "Una tarjeta por cuenta o servicio: qué contiene, dónde vive y qué es público o secreto. Aquí no hay valores secretos, solo sus nombres.",
+    publicar: "El camino de cada tipo de cambio hasta el usuario: servidor, base de datos, web, app por internet y APK nuevo.",
+    diseno: "Cómo está diseñado EVA por dentro: capas del código, entornos, datos, estados, pantallas, zonas de confianza y hoja de ruta.",
+    pendientes: "Lo que falta o se quiere añadir. Se genera leyendo docs/PENDIENTES.md: edita ese archivo y vuelve a generar el mapa."
+  };
+  var vista = "sistema", flujo = DATA.flujos[0].id, diseno = DATA.disenos[0].id, sel = null;
+  function dis(id) { return DATA.disenos.filter(function (d) { return d.id === id; })[0]; }
+  var visor = $("#visor"), cuerpo = $("#panel-cuerpo");
+
+  /* ---------------- estado de zoom por svg ---------------- */
+  var estado = new WeakMap();
+  function svgActivo() {
+    if (vista === "flujos") return $('#vista-flujos .flujo[data-flujo="' + flujo + '"] svg');
+    if (vista === "diseno") return $('#vista-diseno .diseno[data-diseno="' + diseno + '"] svg');
+    return $("#vista-" + (vista === "publicar" ? "publicacion" : vista) + " svg");
+  }
+  function est(svg) {
+    if (!estado.has(svg)) { var v = svg.viewBox.baseVal; estado.set(svg, { full: [v.x, v.y, v.width, v.height], vb: [v.x, v.y, v.width, v.height] }); }
+    return estado.get(svg);
+  }
+  function aplicar(svg) { svg.setAttribute("viewBox", est(svg).vb.join(" ")); }
+  function limitar(s) {
+    var f = s.full, w = s.vb[2], h = s.vb[3];
+    var cx = Math.min(Math.max(s.vb[0] + w / 2, f[0]), f[0] + f[2]);
+    var cy = Math.min(Math.max(s.vb[1] + h / 2, f[1]), f[1] + f[3]);
+    s.vb[0] = cx - w / 2; s.vb[1] = cy - h / 2;
+  }
+  function irA(svg, destino, animar) {
+    var s = est(svg);
+    if (!animar || window.matchMedia("(prefers-reduced-motion: reduce)").matches) { s.vb = destino.slice(); aplicar(svg); return; }
+    var a = s.vb.slice(), t0 = performance.now(), D = 280;
+    (function paso(t) {
+      var k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3);
+      s.vb = a.map(function (v, i) { return v + (destino[i] - v) * e; });
+      aplicar(svg);
+      if (k < 1) requestAnimationFrame(paso);
+    })(t0);
+  }
+  function ajustar(animar) { var svg = svgActivo(); if (svg) irA(svg, est(svg).full, animar); }
+  function aUsuario(svg, cx, cy) { var p = svg.createSVGPoint(); p.x = cx; p.y = cy; return p.matrixTransform(svg.getScreenCTM().inverse()); }
+  function zoom(factor, cx, cy) {
+    var svg = svgActivo(); if (!svg) return;
+    var s = est(svg);
+    var p = cx == null ? { x: s.vb[0] + s.vb[2] / 2, y: s.vb[1] + s.vb[3] / 2 } : aUsuario(svg, cx, cy);
+    var ratio = s.vb[3] / s.vb[2];
+    var w = s.vb[2] / factor, minW = s.full[2] / 16, maxW = s.full[2] * 1.5;
+    w = Math.min(maxW, Math.max(minW, w));
+    var h = w * ratio;
+    s.vb = [p.x - (p.x - s.vb[0]) * (w / s.vb[2]), p.y - (p.y - s.vb[1]) * (h / s.vb[3]), w, h];
+    limitar(s); aplicar(svg);
+  }
+  function mover(dx, dy) {
+    var svg = svgActivo(); if (!svg) return;
+    var m = svg.getScreenCTM(), s = est(svg);
+    s.vb[0] -= dx / m.a; s.vb[1] -= dy / m.d; limitar(s); aplicar(svg);
+  }
+  function enfocar(el) {
+    var svg = svgActivo(); if (!svg || !el) return;
+    var s = est(svg), b = el.getBBox();
+    var w = Math.max(b.width * 3.2, s.full[2] / 3.2), ratio = s.vb[3] / s.vb[2];
+    irA(svg, [b.x + b.width / 2 - w / 2, b.y + b.height / 2 - (w * ratio) / 2, w, w * ratio], true);
+  }
+
+  /* ---------------- punteros: arrastrar, pellizcar, clic ---------------- */
+  var ptrs = new Map(), arrastrando = false, inicio = null, pinch = null;
+  function dosPuntos() { var a = Array.from(ptrs.values()); return { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 }; }
+  visor.addEventListener("pointerdown", function (e) {
+    if (e.target.closest(".controles")) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { visor.setPointerCapture(e.pointerId); } catch (_) {}
+    if (ptrs.size === 1) { inicio = { x: e.clientX, y: e.clientY, t: e.target }; arrastrando = false; }
+    if (ptrs.size === 2) { pinch = dosPuntos(); arrastrando = true; }
+  });
+  visor.addEventListener("pointermove", function (e) {
+    if (!ptrs.has(e.pointerId)) return;
+    var prev = ptrs.get(e.pointerId);
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 2 && pinch) {
+      var n = dosPuntos(); zoom(n.d / pinch.d, n.x, n.y); mover(n.x - pinch.x, n.y - pinch.y); pinch = n; return;
+    }
+    if (ptrs.size === 1 && inicio) {
+      if (!arrastrando && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) > 5) { arrastrando = true; visor.classList.add("mov"); }
+      if (arrastrando) mover(e.clientX - prev.x, e.clientY - prev.y);
+    }
+  });
+  function soltar(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0) {
+      visor.classList.remove("mov");
+      if (!arrastrando && inicio && e.type === "pointerup") elegir(inicio.t);
+      inicio = null; arrastrando = false;
+    }
+  }
+  visor.addEventListener("pointerup", soltar);
+  visor.addEventListener("pointercancel", soltar);
+  visor.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0018));
+    zoom(f, e.clientX, e.clientY);
+  }, { passive: false });
+  visor.addEventListener("dblclick", function (e) { if (!e.target.closest(".controles")) zoom(1.8, e.clientX, e.clientY); });
+  visor.addEventListener("keydown", function (e) {
+    var nodo = e.target.closest && e.target.closest(".nodo");
+    if (nodo && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); elegir(nodo); return; }
+    if (e.target !== visor) return;
+    if (e.key === "+" || e.key === "=") zoom(1.3);
+    else if (e.key === "-" || e.key === "_") zoom(1 / 1.3);
+    else if (e.key === "0") ajustar(true);
+    else if (e.key === "ArrowLeft") mover(60, 0); else if (e.key === "ArrowRight") mover(-60, 0);
+    else if (e.key === "ArrowUp") mover(0, 60); else if (e.key === "ArrowDown") mover(0, -60);
+    else return;
+    e.preventDefault();
+  });
+  $("#z-mas").addEventListener("click", function () { zoom(1.4); });
+  $("#z-menos").addEventListener("click", function () { zoom(1 / 1.4); });
+  $("#z-fit").addEventListener("click", function () { ajustar(true); });
+
+  /* ---------------- selección y resaltado ---------------- */
+  function limpiarSel() {
+    $$(".nodo.sel, .nodo.rel, .arista.hl").forEach(function (n) { n.classList.remove("sel", "rel", "hl"); });
+    $$("svg.mapa.foco").forEach(function (s) { s.classList.remove("foco"); });
+    sel = null;
+  }
+  function elegir(t) {
+    var nodo = t && t.closest ? t.closest(".nodo") : null;
+    if (!nodo) { if (sel) { limpiarSel(); indice(); } return; }
+    var id = nodo.getAttribute("data-id"), card = nodo.getAttribute("data-card");
+    limpiarSel();
+    nodo.classList.add("sel");
+    sel = nodo;
+    if (vista === "sistema" && id) { resaltar(id); detalleNodo(id); }
+    else if (vista === "flujos") { if (id && DATA.nodos[id]) detalleNodo(id, true); else detalleActor(nodo); }
+    else if (vista === "inventario" && card) detalleTarjeta(card);
+    else if (vista === "publicar" && DATA.pasos[id]) detallePaso(id);
+    else if (vista === "diseno" && id) detalleDiseno(dis(diseno).det[id]);
+    else if (vista === "pendientes" && id) detalleDiseno(DATA.pendientes[id]);
+  }
+  function resaltar(id) {
+    var svg = svgActivo(); svg.classList.add("foco");
+    var vecinos = {}; vecinos[id] = 1;
+    $$(".arista", svg).forEach(function (a) {
+      if (a.getAttribute("data-a") === id || a.getAttribute("data-b") === id) {
+        a.classList.add("hl"); vecinos[a.getAttribute("data-a")] = 1; vecinos[a.getAttribute("data-b")] = 1;
+      }
+    });
+    $$(".nodo", svg).forEach(function (n) { if (vecinos[n.getAttribute("data-id")] && n !== sel) n.classList.add("rel"); });
+  }
+  function ir(id) { // saltar a una pieza desde el panel
+    var svg = svgActivo(); var el = svg && $('.nodo[data-id="' + id + '"]', svg);
+    if (el) { elegir(el); enfocar(el); }
+  }
+
+  /* ---------------- panel ---------------- */
+  function nivel(n) { var x = NIVEL[n] || NIVEL.publico; return '<span class="nivel ' + x[1] + '">' + x[0] + "</span>"; }
+  function lista(arr) { return arr && arr.length ? "<ul>" + arr.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : ""; }
+  function cerrar() { return '<button class="cerrar" data-cerrar="1">Cerrar</button>'; }
+  function detalleNodo(id) {
+    var n = DATA.nodos[id]; if (!n) return;
+    var h = cerrar() + '<span class="tag">' + esc(n.etiqueta) + "</span><h2>" + esc(n.titulo) + '</h2><p class="sub">' + esc(n.sub) + "</p><p>" + esc(n.resumen) + "</p>";
+    if (n.donde && n.donde.length) h += "<h3>Dónde está</h3>" + lista(n.donde);
+    if (n.datos && n.datos.length) h += "<h3>Datos clave</h3><table>" + n.datos.map(function (d) { return "<tr><td>" + esc(d[0]) + '</td><td><span class="v">' + esc(d[1]) + "</span></td></tr>"; }).join("") + "</table>";
+    if (n.vars && n.vars.length) h += "<h3>Variables y secretos</h3><table>" + n.vars.map(function (v) {
+      return '<tr class="fila-var"><td>' + esc(v[0]) + '</td><td><span class="v">' + esc(v[1]) + "</span>" + (v[3] ? '<span class="n">' + esc(v[3]) + "</span>" : "") + nivel(v[2]) + "</td></tr>";
+    }).join("") + "</table>";
+    if (n.guardado && n.guardado.length) h += "<h3>Dónde se guarda</h3>" + lista(n.guardado);
+    var con = DATA.conexiones.filter(function (c) { return c.de === id || c.a === id; });
+    if (con.length) h += "<h3>Conexiones</h3><ul>" + con.map(function (c) {
+      var otro = c.de === id ? c.a : c.de, dir = c.de === id ? "→" : "←";
+      return '<li><button class="ir" data-ir="' + esc(otro) + '">' + dir + " " + esc(DATA.nodos[otro].titulo) + "</button> · <b>" + esc(c.etiqueta) + "</b><br>" + esc(c.texto) + "</li>";
+    }).join("") + "</ul>";
+    if (n.notas && n.notas.length) n.notas.forEach(function (t) { h += '<div class="nota">' + esc(t) + "</div>"; });
+    cuerpo.innerHTML = h; $("#panel").scrollTop = 0;
+  }
+  function detalleActor(nodo) {
+    var t = nodo.getAttribute("aria-label") || "";
+    var f = DATA.flujos.filter(function (x) { return x.id === flujo; })[0];
+    var a = f.actores.filter(function (x) { return x.nombre === t; })[0];
+    cuerpo.innerHTML = cerrar() + "<h2>" + esc(t) + '</h2><p class="sub">' + esc(a ? a.sub : "") + "</p><p>Participa en este flujo. Para ver qué es esta pieza por dentro, ábrela desde la vista Sistema.</p>";
+  }
+  function detalleTarjeta(id) {
+    var t = DATA.inventario[id]; if (!t) return;
+    cuerpo.innerHTML = cerrar() + "<h2>" + esc(t.titulo) + '</h2><p class="sub">' + esc(t.sub) + "</p><h3>Contenido</h3><table>" + t.items.map(function (i) {
+      return "<tr><td>" + esc(i[0]) + '</td><td><span class="v">' + esc(i[1]) + "</span>" + nivel(i[2]) + "</td></tr>";
+    }).join("") + "</table>";
+  }
+  function detallePaso(id) {
+    var p = DATA.pasos[id];
+    cuerpo.innerHTML = cerrar() + '<span class="tag">PASO ' + p.n + " DE " + p.de + "</span><h2>" + esc(p.titulo) + '</h2><p class="sub">' + esc(p.sub) + "</p><p>" + esc(p.quien) + ".</p><h3>Camino</h3><p>" + esc(p.camino) + '</p><div class="nota">Llega: ' + esc(p.llegada) + "</div>";
+  }
+  function detalleDiseno(d) {
+    if (!d) return;
+    var h = cerrar() + "<h2>" + esc(d.titulo) + '</h2><p class="sub">' + esc(d.sub || "") + "</p><p>" + esc(d.texto || "") + "</p>";
+    if (d.items && d.items.length) h += "<h3>Detalle</h3><table>" + d.items.map(function (i) { return "<tr><td>" + esc(i[0]) + '</td><td><span class="v">' + esc(i[1]) + "</span></td></tr>"; }).join("") + "</table>";
+    cuerpo.innerHTML = h; $("#panel").scrollTop = 0;
+  }
+  function indice() {
+    var h = "";
+    if (vista === "sistema") {
+      h = "<h2>Las piezas de EVA</h2><p>Haz clic en una pieza del mapa o elige una de esta lista. Al elegirla se atenúa el resto y quedan resaltadas sus conexiones.</p><h3>Piezas</h3><ul class='lista-piezas'>" +
+        Object.keys(DATA.nodos).map(function (k) { return '<li><button data-ir="' + k + '">' + esc(DATA.nodos[k].titulo) + "<small>" + esc(DATA.nodos[k].etiqueta) + "</small></button></li>"; }).join("") + "</ul>" +
+        '<div class="nota">Regla de oro: la app nunca calcula dinero. Solo la API hace cuentas; la app les da formato.</div>';
+    } else if (vista === "flujos") {
+      var f = DATA.flujos.filter(function (x) { return x.id === flujo; })[0];
+      h = "<h2>" + esc(f.titulo) + "</h2><p>" + esc(f.resumen) + "</p><h3>Paso a paso</h3><ol class='pasos'>" + f.pasos.map(function (p) {
+        return "<li>" + esc(p.txt) + "<small>" + esc(p.de) + (p.de === p.a ? "" : " → " + esc(p.a)) + "</small></li>";
+      }).join("") + "</ol>" + f.notas.map(function (t) { return '<div class="nota">' + esc(t) + "</div>"; }).join("");
+    } else if (vista === "diseno") {
+      var d = dis(diseno), ks = Object.keys(d.det);
+      h = "<h2>" + esc(d.titulo) + "</h2><p>" + esc(d.resumen) + "</p><h3>Piezas</h3><ul class='lista-piezas'>" + ks.map(function (k) { return '<li><button data-ir="' + esc(k) + '">' + esc(d.det[k].titulo) + "<small>" + esc(d.det[k].sub || "") + "</small></button></li>"; }).join("") + "</ul>";
+    } else if (vista === "pendientes") {
+      var ps = Object.keys(DATA.pendientes);
+      h = "<h2>Qué falta</h2><p>Tablero generado desde <b>docs/PENDIENTES.md</b>. El color indica la prioridad (acento = alta). Haz clic en una tarjeta para ver su detalle.</p><div class='nota'>" + ps.length + " elementos en total.</div>";
+    } else if (vista === "inventario") {
+      h = "<h2>Cuentas y variables</h2><p>Todo lo que hay que tener en cuenta de cada servicio. Los <b>secretos</b> solo aparecen por su nombre: sus valores están en el panel de cada servicio o en tus archivos .env locales.</p><h3>Tarjetas</h3><ul class='lista-piezas'>" +
+        Object.keys(DATA.inventario).map(function (k) { return '<li><button data-card="' + k + '">' + esc(DATA.inventario[k].titulo) + "<small>" + esc(DATA.inventario[k].sub) + "</small></button></li>"; }).join("") + "</ul>";
+    } else {
+      h = "<h2>Cómo llega un cambio</h2><p>Cada fila es un tipo de cambio y el camino que recorre. Algunos llegan al instante (servidor, web) y otros dependen de que la app se abra (código por internet) o de instalar un APK nuevo.</p><h3>Caminos</h3><ul class='lista-piezas'>" +
+        DATA.publicacion.map(function (f) { return "<li><button disabled>" + esc(f.titulo) + "<small>" + esc(f.llegada) + "</small></button></li>"; }).join("") + "</ul>";
+    }
+    cuerpo.innerHTML = h;
+  }
+  cuerpo.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.getAttribute("data-cerrar")) { limpiarSel(); indice(); return; }
+    if (b.getAttribute("data-ir")) ir(b.getAttribute("data-ir"));
+    if (b.getAttribute("data-card")) {
+      var svg = svgActivo(), el = $('.tarjeta[data-card="' + b.getAttribute("data-card") + '"]', svg);
+      if (el) { limpiarSel(); el.classList.add("sel"); sel = el; detalleTarjeta(b.getAttribute("data-card")); enfocar(el); }
+    }
+  });
+
+  /* ---------------- vistas, flujo y tema ---------------- */
+  function mostrar(v, f, dsn) {
+    vista = v; if (f) flujo = f; if (dsn) diseno = dsn;
+    limpiarSel();
+    $$(".tabs button").forEach(function (b) { b.setAttribute("aria-selected", String(b.getAttribute("data-vista") === (v === "publicar" ? "publicacion" : v))); });
+    $$(".vista").forEach(function (d) { d.hidden = d.id !== "vista-" + (v === "publicar" ? "publicacion" : v); });
+    $$(".flujo").forEach(function (d) { d.hidden = d.getAttribute("data-flujo") !== flujo; });
+    $$(".diseno").forEach(function (d) { d.hidden = d.getAttribute("data-diseno") !== diseno; });
+    $("#caja-flujo").hidden = v !== "flujos";
+    $("#caja-diseno").hidden = v !== "diseno";
+    $("#sel-diseno").value = diseno;
+    $("#desc-vista").textContent = DESC[v];
+    $("#sel-flujo").value = flujo;
+    ajustar(false); indice();
+    try { history.replaceState(null, "", "#" + (v === "flujos" ? "flujos/" + flujo : v === "diseno" ? "diseno/" + diseno : v === "publicar" ? "publicacion" : v)); } catch (_) {}
+  }
+  $$(".tabs button").forEach(function (b) { b.addEventListener("click", function () { var v = b.getAttribute("data-vista"); mostrar(v === "publicacion" ? "publicar" : v); }); });
+  $("#sel-flujo").addEventListener("change", function (e) { mostrar("flujos", e.target.value); });
+  $("#sel-diseno").addEventListener("change", function (e) { mostrar("diseno", null, e.target.value); });
+  $("#btn-tema").addEventListener("click", function () {
+    var r = document.documentElement, oscuro = r.getAttribute("data-theme") === "dark" || (!r.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    r.setAttribute("data-theme", oscuro ? "light" : "dark");
+    try { localStorage.setItem("eva-mapa-tema", oscuro ? "light" : "dark"); } catch (_) {}
+  });
+  try { var t = localStorage.getItem("eva-mapa-tema"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (_) {}
+  if (!document.documentElement.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.setAttribute("data-theme", "dark");
+
+  var h = (location.hash || "").replace("#", "").split("/");
+  if (h[0] === "flujos") mostrar("flujos", DATA.flujos.some(function (f) { return f.id === h[1]; }) ? h[1] : undefined);
+  else if (h[0] === "diseno") mostrar("diseno", null, dis(h[1]) ? h[1] : undefined);
+  else if (h[0] === "pendientes") mostrar("pendientes");
+  else if (h[0] === "inventario") mostrar("inventario");
+  else if (h[0] === "publicacion") mostrar("publicar");
+  else mostrar("sistema");
+})();
+</script>
+</body>
+</html>

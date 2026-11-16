@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVA · Prototipo del primer recorrido</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Asap:wght@400;500;600;700&display=swap">
+<style>
+  :root, [data-theme="light"] {
+    --text:#0C1B26; --text2:#6B7785; --muted:#78899E; --bg:#FFFFFF; --card:#F1F4F7; --elev:#FFFFFF;
+    --border:#E2E8F0; --border-strong:#78899E; --primary:#1F7ECC; --primary-surface:#1A6FB5; --on-primary:#FFFFFF;
+    --income:#4CAF50; --income-strong:#1E8A3C; --warning:#F59E0B; --warning-text:#B45309;
+    --expense:#E63946; --expense-strong:#C21F2C;
+    --ok-bg:rgba(76,175,80,.12); --ok-bd:rgba(76,175,80,.35);
+    --err-bg:rgba(230,57,70,.10); --err-bd:rgba(230,57,70,.35);
+    --warn-bg:rgba(245,158,11,.12); --warn-bd:rgba(245,158,11,.35);
+    --info-bg:rgba(31,126,204,.10); --info-bd:rgba(31,126,204,.30);
+    --stage:#E9EDF2;
+  }
+  [data-theme="dark"] {
+    --text:#F1F5F9; --text2:#A8B6C2; --muted:#8496A6; --bg:#0B141C; --card:#16222E; --elev:#1E2C3A;
+    --border:#2A3B4D; --border-strong:#5E7B96; --primary:#5CB0EE; --primary-surface:#14568C; --on-primary:#FFFFFF;
+    --income:#5FCB6E; --income-strong:#7BD98A; --warning:#FBBF24; --warning-text:#FBBF24;
+    --expense:#FF6B76; --expense-strong:#FF8A93;
+    --ok-bg:rgba(95,203,110,.14); --ok-bd:rgba(95,203,110,.35);
+    --err-bg:rgba(255,107,118,.14); --err-bd:rgba(255,107,118,.35);
+    --warn-bg:rgba(251,191,36,.14); --warn-bd:rgba(251,191,36,.35);
+    --info-bg:rgba(92,176,238,.12); --info-bd:rgba(92,176,238,.30);
+    --stage:#05090d;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Asap',system-ui,sans-serif; background:var(--stage); color:var(--text); }
+  header.top { max-width:1500px; margin:0 auto; padding:24px 20px 8px; display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; justify-content:space-between; }
+  header.top h1 { margin:0; font-size:26px; }
+  header.top p { margin:6px 0 0; color:var(--text2); max-width:760px; font-size:14px; line-height:1.5; }
+  .toggle { display:flex; gap:8px; }
+  .btn-sm { border:1px solid var(--border-strong); background:var(--bg); color:var(--text); border-radius:10px; padding:8px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  .btn-sm[aria-pressed="true"] { background:var(--primary); border-color:var(--primary); color:#fff; }
+  .legend { max-width:1500px; margin:0 auto; padding:0 20px 12px; font-size:13px; color:var(--text2); }
+  .legend b { color:var(--text); font-weight:600; }
+  .stage { max-width:1500px; margin:0 auto; padding:12px 20px 40px; display:flex; flex-wrap:wrap; gap:28px; justify-content:center; align-items:flex-start; }
+  figure.phone-wrap { margin:0; width:360px; }
+  figcaption { font-size:13px; color:var(--text2); margin:0 4px 10px; line-height:1.4; }
+  figcaption b { display:block; color:var(--text); font-size:15px; margin-bottom:2px; }
+  .phone { width:360px; min-height:720px; background:var(--bg); border-radius:34px; border:9px solid #111a22; outline:1px solid var(--border); overflow:hidden; display:flex; flex-direction:column; }
+  [data-theme="dark"] .phone { border-color:#2A3B4D; }
+  .status { height:28px; display:flex; justify-content:space-between; align-items:center; padding:0 22px; font-size:12px; font-weight:600; color:var(--text); }
+  .appbar { display:flex; align-items:center; gap:10px; padding:6px 16px 10px; }
+  .appbar .back { font-size:22px; color:var(--text); }
+  .appbar h2 { margin:0; font-size:18px; font-weight:600; flex:1; }
+  .content { flex:1; padding:4px 16px 16px; display:flex; flex-direction:column; gap:12px; }
+  .tabbar { display:flex; justify-content:space-around; align-items:center; padding:8px 4px 12px; border-top:1px solid var(--border); background:var(--bg); }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:11px; color:var(--muted); min-width:56px; }
+  .tab i { font-size:22px; }
+  .tab.on { color:var(--primary); }
+  .tab.add i { background:var(--primary); color:#fff; border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; font-size:22px; }
+  .card { background:var(--card); border-radius:14px; padding:12px 14px; }
+  .card.line { background:var(--elev); border:1px solid var(--border); }
+  .lbl { font-size:12px; color:var(--text2); margin-bottom:4px; display:block; }
+  .field { display:flex; flex-direction:column; }
+  input, select { font:inherit; font-size:15px; color:var(--text); background:var(--elev); border:1px solid var(--border); border-radius:10px; padding:10px 12px; width:100%; }
+  input:focus, select:focus { outline:2px solid var(--primary); outline-offset:1px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; min-width:0; }
+  .between { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .big { font-size:28px; font-weight:700; letter-spacing:-.3px; }
+  .mid { font-size:16px; font-weight:600; }
+  .sm { font-size:13px; color:var(--text2); }
+  .xs { font-size:12px; color:var(--muted); }
+  .mono { font-variant-numeric:tabular-nums; }
+  .inc { color:var(--income-strong); } .exp { color:var(--expense-strong); }
+  .alert { border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.4; display:flex; gap:8px; align-items:flex-start; border:1px solid; }
+  .alert i { font-size:18px; margin-top:1px; }
+  .alert.ok { background:var(--ok-bg); border-color:var(--ok-bd); }
+  .alert.ok i { color:var(--income-strong); }
+  .alert.warn { background:var(--warn-bg); border-color:var(--warn-bd); }
+  .alert.warn i { color:var(--warning-text); }
+  .alert.err { background:var(--err-bg); border-color:var(--err-bd); }
+  .alert.err i { color:var(--expense-strong); }
+  .alert.info { background:var(--info-bg); border-color:var(--info-bd); }
+  .alert.info i { color:var(--primary); }
+  .cta { background:var(--primary-surface); color:var(--on-primary); border:0; border-radius:14px; padding:14px; font:inherit; font-weight:600; font-size:16px; width:100%; cursor:pointer; }
+  .cta.secondary { background:transparent; color:var(--primary); border:1px solid var(--primary); }
+  .chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600; padding:3px 9px; border-radius:99px; }
+  .chip.paid { background:var(--ok-bg); color:var(--income-strong); }
+  .chip.partial { background:var(--warn-bg); color:var(--warning-text); }
+  .chip.unpaid { background:var(--info-bg); color:var(--primary); }
+  .chip.over { background:var(--err-bg); color:var(--expense-strong); }
+  .chip.exempt { background:var(--card); color:var(--text2); }
+  .avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:600; font-size:14px; flex-shrink:0; }
+  .formula { font-family:ui-monospace,Consolas,monospace; font-size:12px; background:var(--elev); border:1px dashed var(--border-strong); border-radius:8px; padding:6px 8px; color:var(--text2); word-break:break-word; }
+  .kv { display:flex; justify-content:space-between; font-size:14px; padding:5px 0; border-bottom:1px solid var(--border); }
+  .kv:last-child { border-bottom:0; }
+  .kv span:first-child { color:var(--text2); }
+  .list > .item { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .list > .item:last-child { border-bottom:0; }
+  .grow { flex:1; min-width:0; }
+  .amt { width:92px; text-align:right; padding:8px 10px; }
+  .amt.bad { border-color:var(--expense); }
+  .sw { display:flex; align-items:center; gap:10px; font-size:14px; }
+  .sw input { width:auto; accent-color:var(--primary); }
+  .hint { font-size:12px; color:var(--muted); }
+  .section-t { font-size:13px; font-weight:600; color:var(--text2); text-transform:none; margin:4px 2px 0; }
+  .note { max-width:1500px; margin:0 auto; padding:0 20px 36px; font-size:13px; color:var(--text2); line-height:1.6; }
+  .note code { background:var(--card); padding:1px 5px; border-radius:5px; }
+</style>
+</head>
+<body data-theme-root>
+<header class="top">
+  <div>
+    <h1>EVA · Prototipo del primer recorrido (Entrega 1)</h1>
+    <p>Cinco pantallas interactivas con la paleta real de la app. Las cifras se calculan en vivo con las mismas fórmulas del motor
+       (<code>docs/especificacion/04-motor-de-calculo.md</code>): prueba los campos. En la app real, el servidor hace estos cálculos y la pantalla solo muestra la vista previa.</p>
+  </div>
+  <div class="toggle" role="group" aria-label="Tema">
+    <button class="btn-sm" id="t-light" aria-pressed="true">Claro</button>
+    <button class="btn-sm" id="t-dark" aria-pressed="false">Oscuro</button>
+  </div>
+</header>
+<div class="legend"><b>Qué revisar:</b> (1) ¿los campos y el orden te sirven? · (2) ¿la vista previa explica bien cada cálculo? · (3) ¿falta algo que necesites ver en la pantalla? · (4) ¿algún texto te confunde?</div>
+
+<main class="stage">
+
+<!-- ============ 1. NUEVO SERVICIO ============ -->
+<figure class="phone-wrap">
+  <figcaption><b>1 · Nuevo servicio</b>Verifica el calendario, sugiere la cuota y muestra los primeros ciclos antes de crear. (RN-S05, RN-C03, RN-P03)</figcaption>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span><i class="ti ti-wifi"></i> <i class="ti ti-battery-3"></i></span></div>
+    <div class="appbar"><i class="ti ti-arrow-left back"></i><h2>Nuevo servicio</h2></div>
+    <div class="content">
+      <div class="field"><label class="lbl" for="s1-name">Nombre</label><input id="s1-name" value="Netflix"></div>
+      <div class="row">
+        <div class="field"><label class="lbl" for="s1-cap">Capacidad (plazas)</label><input id="s1-cap" type="number" min="1" value="4"></div>
+        <div class="field"><label class="lbl" for="s1-price">Precio anunciado</label><input id="s1-price" value="45.00" inputmode="decimal"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label class="lbl" for="s1-freq">Frecuencia</label>
+          <select id="s1-freq"><option value="1">Mensual</option><option value="3">Cada 3 meses</option><option value="12">Anual</option></select></div>
+        <div class="field"><label class="lbl" for="s1-start">Inicio</label><input id="s1-start" type="date" value="2026-10-07"></div>
+      </div>
+      <div class="field"><label class="lbl" for="s1-next">Siguiente pago (según el proveedor)</label><input id="s1-next" type="date" value="2026-11-07"></div>
+      <div id="s1-cal"></div>
+      <div class="card">
+        <div class="between"><span class="lbl" style="margin:0">Plazas ocupadas (contándote)</span>
+          <span class="sw"><button class="btn-sm" id="s1-minus" aria-label="Menos">−</button><b id="s1-occ" class="mono">4</b><button class="btn-sm" id="s1-plus" aria-label="Más">+</button></span></div>
+        <div class="between" style="margin-top:8px"><div><div class="sm">Cuota sugerida por plaza</div><div class="big mono" id="s1-quota">S/ 12.00</div></div>
+          <span class="chip unpaid">editable</span></div>
+        <div class="formula" id="s1-quota-f" style="margin-top:8px"></div>
+      </div>
+      <div class="card line">
+        <div class="section-t" style="margin:0 0 6px">Primeros ciclos</div>
+        <div id="s1-cycles"></div>
+      </div>
+      <button class="cta">Crear servicio</button>
+    </div>
+    <nav class="tabbar" aria-label="Navegación"><span class="tab"><i class="ti ti-home"></i>Inicio</span><span class="tab on"><i class="ti ti-calendar"></i>Planificación</span><span class="tab add"><i class="ti ti-plus"></i></span><span class="tab"><i class="ti ti-target"></i>Metas</span><span class="tab"><i class="ti ti-user"></i>Perfil</span></nav>
+  </div>
+</figure>
+
+<!-- ============ 2. INCORPORACIÓN ============ -->
+<figure class="phone-wrap">
+  <figcaption><b>2 · Incorporar participante</b>Vista previa del prorrateo con la fórmula visible antes de confirmar. (RN-I01…I08)</figcaption>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span><i class="ti ti-wifi"></i> <i class="ti ti-battery-3"></i></span></div>
+    <div class="appbar"><i class="ti ti-arrow-left back"></i><h2>Incorporar a Netflix</h2></div>
+    <div class="content">
+      <div class="card line between"><div style="display:flex;gap:10px;align-items:center"><div class="avatar" style="background:#8E6BBF">B</div><div><div class="mid">Beto</div><div class="xs">Plaza: Cuenta 2</div></div></div><i class="ti ti-chevron-down"></i></div>
+      <div class="row">
+        <div class="field"><label class="lbl" for="s2-quota">Cuota de esta plaza</label><input id="s2-quota" value="9.00" inputmode="decimal"></div>
+        <div class="field"><label class="lbl" for="s2-g">Días gratis (g)</label><input id="s2-g" type="number" min="0" value="7"></div>
+      </div>
+      <div class="field"><label class="lbl" for="s2-join">Fecha de ingreso (ciclo 7 oct → 7 nov)</label><input id="s2-join" type="date" value="2026-10-26" min="2026-10-07" max="2026-11-06"></div>
+      <div id="s2-result" class="card"></div>
+      <div id="s2-warn"></div>
+      <div class="card line">
+        <div class="section-t" style="margin:0 0 4px">Qué cobrarás</div>
+        <div class="kv"><span>Hoy (vence el ingreso)</span><b class="mono" id="s2-now">S/ 8.00</b></div>
+        <div class="kv"><span>Desde el 7 nov (ciclo completo)</span><b class="mono" id="s2-next">S/ 9.00</b></div>
+      </div>
+      <button class="cta">Confirmar ingreso</button>
+      <div class="hint">Agregar a Beto en EVA no lo agrega en Netflix.</div>
+    </div>
+    <nav class="tabbar" aria-label="Navegación"><span class="tab"><i class="ti ti-home"></i>Inicio</span><span class="tab on"><i class="ti ti-calendar"></i>Planificación</span><span class="tab add"><i class="ti ti-plus"></i></span><span class="tab"><i class="ti ti-target"></i>Metas</span><span class="tab"><i class="ti ti-user"></i>Perfil</span></nav>
+  </div>
+</figure>
+
+<!-- ============ 3. COBRO ============ -->
+<figure class="phone-wrap">
+  <figcaption><b>3 · Registrar cobro</b>Un solo ingreso real, repartido a mano entre cargos. El sobrante queda reservado. (RN-R01…R09)</figcaption>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span><i class="ti ti-wifi"></i> <i class="ti ti-battery-3"></i></span></div>
+    <div class="appbar"><i class="ti ti-arrow-left back"></i><h2>Registrar cobro</h2></div>
+    <div class="content">
+      <div class="card line between"><div style="display:flex;gap:10px;align-items:center"><div class="avatar" style="background:#E07A5F">A</div><div><div class="mid">Ana</div><div class="xs">Debe S/ 24.00 en 3 cargos</div></div></div><i class="ti ti-chevron-down"></i></div>
+      <div class="row">
+        <div class="field"><label class="lbl" for="s3-amt">Importe recibido</label><input id="s3-amt" value="40.00" inputmode="decimal"></div>
+        <div class="field"><label class="lbl" for="s3-acc">Entró a</label><select id="s3-acc"><option>BCP</option><option>Efectivo</option></select></div>
+      </div>
+      <div class="between"><span class="section-t">Aplicar a</span><button class="btn-sm" id="s3-suggest">Sugerir por vencimiento</button></div>
+      <div class="card line list" id="s3-list"></div>
+      <div id="s3-msg"></div>
+      <div class="card">
+        <div class="kv"><span>Aplicado</span><b class="mono" id="s3-applied">—</b></div>
+        <div class="kv"><span>Sobrante</span><b class="mono" id="s3-rest">—</b></div>
+        <label class="sw" style="margin-top:6px"><input type="checkbox" id="s3-reserve" checked> Reservar el sobrante para el próximo cargo de Netflix</label>
+      </div>
+      <div class="alert info"><i class="ti ti-info-circle"></i><span>Se registra <b>un solo ingreso de <span id="s3-total">S/ 40.00</span></b> en la cuenta. El reparto no crea ingresos adicionales.</span></div>
+      <button class="cta" id="s3-ok">Confirmar cobro</button>
+    </div>
+    <nav class="tabbar" aria-label="Navegación"><span class="tab"><i class="ti ti-home"></i>Inicio</span><span class="tab on"><i class="ti ti-calendar"></i>Planificación</span><span class="tab add"><i class="ti ti-plus"></i></span><span class="tab"><i class="ti ti-target"></i>Metas</span><span class="tab"><i class="ti ti-user"></i>Perfil</span></nav>
+  </div>
+</figure>
+
+<!-- ============ 4. ESTADO DE CUENTA ============ -->
+<figure class="phone-wrap">
+  <figcaption><b>4 · Estado de cuenta de un contacto</b>Por servicio → plaza → ciclo, con estado de pago y crédito. (RN-P01, RN-CH05, RN-R09)</figcaption>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span><i class="ti ti-wifi"></i> <i class="ti ti-battery-3"></i></span></div>
+    <div class="appbar"><i class="ti ti-arrow-left back"></i><h2>Ana</h2><i class="ti ti-share-3" style="font-size:20px"></i></div>
+    <div class="content">
+      <div class="row">
+        <div class="card"><div class="sm">Pendiente</div><div class="big mono exp">S/ 24.00</div><div class="xs">S/ 12.00 vencido</div></div>
+        <div class="card"><div class="sm">Crédito reservado</div><div class="big mono inc">S/ 10.00</div><div class="xs">para el ciclo del 7 nov</div></div>
+      </div>
+      <div class="section-t">Netflix</div>
+      <div class="card line list">
+        <div class="item"><div class="grow"><div class="mid" style="font-size:15px">Cuenta 1 · S/ 10.00</div><div class="xs">Ciclo 7 oct → 7 nov · pagó S/ 6.00</div></div><span class="chip partial">Parcial</span><b class="mono exp">S/ 4.00</b></div>
+        <div class="item"><div class="grow"><div class="mid" style="font-size:15px">Cuenta 2 · S/ 8.00</div><div class="xs">Ciclo 7 oct → 7 nov · sin pagos</div></div><span class="chip over">Vencido</span><b class="mono exp">S/ 8.00</b></div>
+        <div class="item"><div class="grow"><div class="mid" style="font-size:15px">Cuenta 1 · S/ 10.00</div><div class="xs">Ciclo 7 sep → 7 oct</div></div><span class="chip paid">Pagado</span><b class="mono">S/ 0.00</b></div>
+      </div>
+      <div class="section-t">Spotify</div>
+      <div class="card line list">
+        <div class="item"><div class="grow"><div class="mid" style="font-size:15px">Plaza 1 · S/ 20.00</div><div class="xs">Ciclo 15 oct → 15 nov · pagó S/ 8.00 · vence el 15</div></div><span class="chip partial">Parcial</span><b class="mono">S/ 12.00</b></div>
+      </div>
+      <div class="card"><div class="kv"><span>Total de Ana (Netflix 12 + Spotify 12)</span><b class="mono">S/ 24.00</b></div></div>
+      <button class="cta secondary"><i class="ti ti-copy"></i> Copiar texto para compartir</button>
+      <button class="cta">Registrar cobro</button>
+    </div>
+    <nav class="tabbar" aria-label="Navegación"><span class="tab"><i class="ti ti-home"></i>Inicio</span><span class="tab on"><i class="ti ti-calendar"></i>Planificación</span><span class="tab add"><i class="ti ti-plus"></i></span><span class="tab"><i class="ti ti-target"></i>Metas</span><span class="tab"><i class="ti ti-user"></i>Perfil</span></nav>
+  </div>
+</figure>
+
+<!-- ============ 5. DETALLE DEL SERVICIO ============ -->
+<figure class="phone-wrap">
+  <figcaption><b>5 · Detalle del servicio</b>Ocupación, pago al proveedor y costo propio (previsto y según cobros). (RN-F01…F08)</figcaption>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span><i class="ti ti-wifi"></i> <i class="ti ti-battery-3"></i></span></div>
+    <div class="appbar"><i class="ti ti-arrow-left back"></i><h2>Netflix</h2><i class="ti ti-dots" style="font-size:22px"></i></div>
+    <div class="content">
+      <div class="card">
+        <div class="between"><div><div class="sm">Ciclo actual</div><div class="mid">7 oct → 7 nov</div></div><span class="chip paid">4 / 4 plazas</span></div>
+        <div class="xs" style="margin-top:6px">Próxima renovación: 7 nov · Precio anunciado S/ 45.00</div>
+      </div>
+      <div class="section-t">Pago al proveedor</div>
+      <div class="card line">
+        <div class="kv"><span>Anunciado</span><b class="mono">S/ 45.00</b></div>
+        <div class="kv"><span>Pagado (10 oct, desde BCP)</span><b class="mono">S/ 47.00</b></div>
+        <div class="alert info" style="margin-top:8px"><i class="ti ti-calendar-check"></i><span>Se pagó el 10, pero la renovación sigue el <b>7</b>. El calendario no se mueve.</span></div>
+      </div>
+      <div class="section-t">Costo propio de este ciclo</div>
+      <div class="card line">
+        <div class="kv"><span>Cuotas exigibles de otros</span><b class="mono">S/ 36.00</b></div>
+        <div class="kv"><span>Cobrado hasta hoy</span><b class="mono">S/ 24.00</b></div>
+        <div class="kv"><span>Pendiente de cobrar</span><b class="mono exp">S/ 12.00</b></div>
+        <div class="row" style="margin-top:8px">
+          <div class="card"><div class="xs">Costo previsto</div><div class="mid mono">S/ 11.00</div><div class="xs">47 − 36</div></div>
+          <div class="card"><div class="xs">Según cobros</div><div class="mid mono">S/ 23.00</div><div class="xs">47 − 24</div></div>
+        </div>
+      </div>
+      <div class="section-t">Participantes</div>
+      <div class="card line list">
+        <div class="item"><div class="avatar" style="background:#1F7ECC">T</div><div class="grow"><div class="mid" style="font-size:15px">Tú</div><div class="xs">Plaza propia · sin cargo</div></div></div>
+        <div class="item"><div class="avatar" style="background:#E07A5F">A</div><div class="grow"><div class="mid" style="font-size:15px">Ana · 2 plazas</div><div class="xs">10 + 8 = S/ 18.00 · pagó S/ 6.00</div></div><span class="chip over">Debe S/ 12.00</span></div>
+        <div class="item"><div class="avatar" style="background:#8E6BBF">B</div><div class="grow"><div class="mid" style="font-size:15px">Beto</div><div class="xs">S/ 9.00</div></div><span class="chip paid">Pagado</span></div>
+        <div class="item"><div class="avatar" style="background:#3A9E7E">C</div><div class="grow"><div class="mid" style="font-size:15px">Carla</div><div class="xs">S/ 9.00</div></div><span class="chip paid">Pagado</span></div>
+      </div>
+      <button class="cta">Registrar pago al proveedor</button>
+    </div>
+    <nav class="tabbar" aria-label="Navegación"><span class="tab"><i class="ti ti-home"></i>Inicio</span><span class="tab on"><i class="ti ti-calendar"></i>Planificación</span><span class="tab add"><i class="ti ti-plus"></i></span><span class="tab"><i class="ti ti-target"></i>Metas</span><span class="tab"><i class="ti ti-user"></i>Perfil</span></nav>
+  </div>
+</figure>
+
+</main>
+
+<div class="note">
+  <b>Notas del prototipo.</b> Es un boceto de diseño, no la app: no guarda datos ni se conecta al servidor. Los nombres, importes y fechas son de ejemplo
+  (los de los escenarios A01–A09 del documento 14). Los íconos vienen de Tabler y la tipografía es Asap, como la app actual; si no hay internet, los íconos pueden no verse.
+  Los valores iniciales confirmados son <code>g = 0</code> y límite de baja sin definir; aquí <code>g = 7</code> solo para poder probar el tramo gratis.
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var ceilDiv = function (a, b) { return (a + b - 1n) / b; };
+  var fmt = function (c) { var n = Number(c) / 100; return 'S/ ' + n.toFixed(2); };
+  var toCents = function (s) {
+    var m = String(s).trim().replace(',', '.').match(/^(\d+)(?:\.(\d{1,2}))?$/);
+    if (!m) return null;
+    return BigInt(m[1]) * 100n + BigInt((m[2] || '').padEnd(2, '0') || '0');
+  };
+  var dayNum = function (iso) { var p = iso.split('-').map(Number); return Math.floor(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000); };
+  var dim = function (y, m) { return new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); };
+  var addMonths = function (iso, count, anchorDay) {
+    var p = iso.split('-').map(Number); var idx = p[1] - 1 + count;
+    var y = p[0] + Math.floor(idx / 12); var m = ((idx % 12) + 12) % 12;
+    var d = Math.min(anchorDay, dim(y, m));
+    return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  };
+  var MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var human = function (iso) { var p = iso.split('-').map(Number); return p[2] + ' ' + MES[p[1] - 1] + (p[0] !== 2026 ? ' ' + p[0] : ''); };
+  var alertBox = function (cls, icon, html) { return '<div class="alert ' + cls + '"><i class="ti ti-' + icon + '"></i><span>' + html + '</span></div>'; };
+
+  /* tema */
+  function theme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    $('t-light').setAttribute('aria-pressed', t === 'light'); $('t-dark').setAttribute('aria-pressed', t === 'dark');
+  }
+  $('t-light').onclick = function () { theme('light'); }; $('t-dark').onclick = function () { theme('dark'); };
+
+  /* 1. nuevo servicio */
+  var occ = 4;
+  function s1() {
+    var start = $('s1-start').value, next = $('s1-next').value, step = Number($('s1-freq').value);
+    if (!start || !next) return;
+    var anchor = Number(start.split('-')[2]);
+    var expected = addMonths(start, step, anchor);
+    var diff = dayNum(next) - dayNum(expected);
+    $('s1-cal').innerHTML = diff === 0
+      ? alertBox('ok', 'circle-check', 'El calendario coincide: inicio + ' + (step === 12 ? '1 año' : step + ' mes' + (step > 1 ? 'es' : '')) + ' = ' + human(expected) + '.')
+      : alertBox('warn', 'alert-triangle', 'El proveedor indica el <b>' + human(next) + '</b> pero el cálculo da el <b>' + human(expected) + '</b> (' + (diff > 0 ? '+' : '') + diff + ' días). Prevalece la fecha del proveedor; confírmalo para continuar.<br><label class="sw" style="margin-top:6px"><input type="checkbox"> Confirmo esta fecha</label>');
+    var price = toCents($('s1-price').value);
+    if (price !== null) {
+      var perSeat = ceilDiv(price, BigInt(occ));
+      var q = ceilDiv(perSeat, 100n) * 100n;
+      $('s1-quota').textContent = fmt(q);
+      $('s1-quota-f').textContent = 'ceil( ' + fmt(price) + ' / ' + occ + ' plazas ) → ' + fmt(q);
+    }
+    $('s1-occ').textContent = occ;
+    var cap = Number($('s1-cap').value) || 1;
+    var html = '', s = next, a2 = Number(next.split('-')[2]);
+    html += '<div class="kv"><span>Ciclo 1</span><b>' + human(start) + ' → ' + human(next) + '</b></div>';
+    var e2 = addMonths(next, step, a2);
+    html += '<div class="kv"><span>Ciclo 2</span><b>' + human(next) + ' → ' + human(e2) + '</b></div>';
+    html += '<div class="kv"><span>Ocupación</span><b>' + occ + ' / ' + cap + ' plazas</b></div>';
+    $('s1-cycles').innerHTML = html;
+  }
+  ['s1-start','s1-next','s1-freq','s1-price','s1-cap'].forEach(function (id) { $(id).addEventListener('input', s1); });
+  $('s1-plus').onclick = function () { occ = Math.min(occ + 1, Number($('s1-cap').value) || 1); s1(); };
+  $('s1-minus').onclick = function () { occ = Math.max(occ - 1, 1); s1(); };
+  s1();
+
+  /* 2. incorporación */
+  var CYC_START = '2026-10-07', CYC_END = '2026-11-07', BASE = 30;
+  function s2() {
+    var quota = toCents($('s2-quota').value), g = Number($('s2-g').value), join = $('s2-join').value;
+    if (quota === null || !join) { $('s2-result').innerHTML = '<span class="sm">Completa cuota y fecha.</span>'; return; }
+    var r = dayNum(CYC_END) - dayNum(join);
+    var warn = '', gross, exempt, mode, label;
+    if (dayNum(join) < dayNum(CYC_START) || r <= 0) { $('s2-result').innerHTML = alertBox('err', 'alert-circle', 'La fecha debe estar dentro del ciclo vigente (7 oct → 7 nov).'); $('s2-warn').innerHTML = ''; return; }
+    var prorated = ceilDiv(quota * BigInt(r), BigInt(BASE) * 100n) * 100n;
+    if (dayNum(join) === dayNum(CYC_START)) { gross = quota; exempt = 0n; mode = 'ciclo_completo'; label = 'Ciclo completo'; }
+    else {
+      gross = prorated < quota ? prorated : quota;
+      if (prorated > quota) warn = alertBox('warn', 'alert-triangle', 'El tramo calculado (' + fmt(prorated) + ') supera la cuota; se limita a <b>' + fmt(quota) + '</b>.');
+      if (r <= g) { exempt = gross; mode = 'tramo_gratis'; label = 'Tramo gratis'; } else { exempt = 0n; mode = 'tramo_cobrado'; label = 'Tramo cobrado'; }
+    }
+    var net = gross - exempt;
+    var chipCls = mode === 'tramo_gratis' ? 'paid' : (mode === 'tramo_cobrado' ? 'partial' : 'unpaid');
+    if (mode === 'ciclo_completo') {
+      $('s2-result').innerHTML =
+        '<div class="between"><div><div class="sm">Ingreso el día de renovación</div><div class="mid">Ciclo completo</div></div><span class="chip unpaid">Sin prorrateo</span></div>' +
+        '<div class="between" style="margin-top:8px"><span class="mid">Cobro neto</span><span class="big mono">' + fmt(net) + '</span></div>' +
+        '<div class="formula" style="margin-top:8px">Cuota completa del ciclo: ' + fmt(quota) + ' (no se divide por días)</div>';
+      $('s2-warn').innerHTML = '';
+      $('s2-now').textContent = fmt(net);
+      $('s2-next').textContent = fmt(quota);
+      return;
+    }
+    $('s2-result').innerHTML =
+      '<div class="between"><div><div class="sm">Días restantes hasta el 7 nov</div><div class="mid">' + r + ' días</div></div><span class="chip ' + chipCls + '">' + label + '</span></div>' +
+      '<div class="kv" style="margin-top:6px"><span>Prorrateo (cuota × ' + r + ' / ' + BASE + ')</span><b class="mono">' + fmt(prorated) + '</b></div>' +
+      '<div class="kv"><span>Exención por umbral (' + r + ' ≤ ' + g + '?)</span><b class="mono">' + (exempt > 0n ? '− ' + fmt(exempt) : (r <= g ? 'sí' : 'no')) + '</b></div>' +
+      '<div class="between" style="margin-top:6px"><span class="mid">Cobro neto</span><span class="big mono">' + fmt(net) + '</span></div>' +
+      '<div class="formula" style="margin-top:8px">min( ' + fmt(quota) + ', ceil_sol( ' + fmt(quota) + ' × ' + r + ' / ' + BASE + ' ) ) = ' + fmt(gross) + (r <= g && dayNum(join) !== dayNum(CYC_START) ? '  →  r ≤ g: gratis' : '') + '</div>';
+    $('s2-warn').innerHTML = warn;
+    $('s2-now').textContent = fmt(net);
+    $('s2-next').textContent = fmt(quota);
+  }
+  ['s2-quota','s2-g','s2-join'].forEach(function (id) { $(id).addEventListener('input', s2); });
+  s2();
+
+  /* 3. cobro */
+  var charges = [
+    { id: 'n1', t: 'Netflix · Cuenta 2', sub: 'Ciclo 7 oct → 7 nov · venció el 7 oct', pend: 800n, due: 1 },
+    { id: 'n2', t: 'Netflix · Cuenta 1', sub: 'Ciclo 7 oct → 7 nov · venció el 7 oct · pagó S/ 6.00', pend: 400n, due: 2 },
+    { id: 's1', t: 'Spotify · Plaza 1', sub: 'Ciclo 15 oct → 15 nov', pend: 1200n, due: 3 }
+  ];
+  var alloc = { n1: 0n, n2: 0n, s1: 0n };
+  function s3draw() {
+    var h = '';
+    charges.forEach(function (c) {
+      var v = alloc[c.id] || 0n;
+      h += '<div class="item"><div class="grow"><div class="mid" style="font-size:15px">' + c.t + '</div><div class="xs">' + c.sub + '</div><div class="xs">Pendiente ' + fmt(c.pend) + '</div></div>' +
+           '<input class="amt mono" data-id="' + c.id + '" value="' + (Number(v) / 100).toFixed(2) + '" inputmode="decimal" aria-label="Aplicar a ' + c.t + '"></div>';
+    });
+    $('s3-list').innerHTML = h;
+    $('s3-list').querySelectorAll('input').forEach(function (el) {
+      el.addEventListener('input', function () { var v = toCents(el.value); alloc[el.dataset.id] = v === null ? 0n : v; s3calc(); });
+    });
+    s3calc();
+  }
+  function s3calc() {
+    var total = toCents($('s3-amt').value);
+    var msgs = '', applied = 0n, bad = false;
+    charges.forEach(function (c) {
+      var v = alloc[c.id] || 0n; applied += v;
+      var el = $('s3-list').querySelector('[data-id="' + c.id + '"]');
+      var over = v > c.pend; if (el) el.classList.toggle('bad', over);
+      if (over) { bad = true; msgs += alertBox('err', 'alert-circle', c.t + ': no puedes aplicar más que lo pendiente (' + fmt(c.pend) + ').'); }
+    });
+    if (total === null || total <= 0n) { $('s3-total').textContent = '—'; $('s3-applied').textContent = fmt(applied); $('s3-rest').textContent = '—'; $('s3-msg').innerHTML = alertBox('err', 'alert-circle', 'Ingresa un importe válido (por ejemplo 60.00).'); return; }
+    $('s3-total').textContent = fmt(total);
+    var rest = total - applied;
+    $('s3-applied').textContent = fmt(applied);
+    if (rest < 0n) { bad = true; $('s3-rest').textContent = '− ' + fmt(-rest); msgs += alertBox('err', 'alert-circle', 'La suma aplicada supera el importe recibido en ' + fmt(-rest) + '.'); }
+    else { $('s3-rest').textContent = fmt(rest); if (rest > 0n) msgs += alertBox('ok', 'piggy-bank', 'Quedan ' + fmt(rest) + ' de sobrante: ' + ($('s3-reserve').checked ? 'se reservan para el próximo cargo de Netflix.' : 'quedan como crédito libre de Ana.')); }
+    $('s3-msg').innerHTML = msgs;
+    $('s3-ok').dataset.bad = bad ? '1' : '';
+    $('s3-ok').style.opacity = bad ? '.55' : '1';
+  }
+  $('s3-amt').addEventListener('input', s3calc); $('s3-reserve').addEventListener('change', s3calc);
+  $('s3-suggest').onclick = function () {
+    var total = toCents($('s3-amt').value) || 0n; var left = total;
+    charges.slice().sort(function (a, b) { return a.due - b.due; }).forEach(function (c) { var take = left < c.pend ? left : c.pend; alloc[c.id] = take; left -= take; });
+    s3draw();
+  };
+  $('s3-ok').onclick = function () { if (this.dataset.bad) { $('s3-msg').scrollIntoView({ block: 'center' }); } };
+  alloc.n1 = 800n; alloc.n2 = 400n; alloc.s1 = 1200n;
+  s3draw();
+})();
+</script>
+</body>
+</html>
