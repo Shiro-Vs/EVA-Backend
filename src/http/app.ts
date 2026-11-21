@@ -108,7 +108,11 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: req.id } });
   });
 
-  app.get('/healthz', async () => ({ status: 'ok' }));
+  app.get('/healthz', async () => ({
+    status: 'ok',
+    ...(process.env.RENDER_GIT_COMMIT ? { commit: process.env.RENDER_GIT_COMMIT.slice(0, 7) } : {}),
+    ...(process.env.RENDER_GIT_BRANCH ? { branch: process.env.RENDER_GIT_BRANCH } : {}),
+  }));
   app.get('/readyz', async (_req, reply) => {
     try {
       await pool.query('select 1');

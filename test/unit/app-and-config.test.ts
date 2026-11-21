@@ -29,12 +29,24 @@ describe('configuración', () => {
 });
 
 describe('API base', () => {
-  it('/healthz responde ok con X-Request-Id', async () => {
-    const app = buildApp({ pool, env: testEnv(), logLevel: 'silent' });
-    const res = await app.inject({ method: 'GET', url: '/healthz', headers: { 'x-request-id': 'req-123' } });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['x-request-id']).toBe('req-123');
-    await app.close();
+  it('/healthz responde ok con X-Request-Id y commit cuando existe RENDER_GIT_COMMIT', async () => {
+    const prevCommit = process.env.RENDER_GIT_COMMIT;
+    const prevBranch = process.env.RENDER_GIT_BRANCH;
+    try {
+      process.env.RENDER_GIT_COMMIT = 'abcdef1234567890';
+      process.env.RENDER_GIT_BRANCH = 'main';
+      const app = buildApp({ pool, env: testEnv(), logLevel: 'silent' });
+      const res = await app.inject({ method: 'GET', url: '/healthz', headers: { 'x-request-id': 'req-123' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['x-request-id']).toBe('req-123');
+      expect(res.json()).toEqual({ status: 'ok', commit: 'abcdef1', branch: 'main' });
+      await app.close();
+    } finally {
+      if (prevCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+      else process.env.RENDER_GIT_COMMIT = prevCommit;
+      if (prevBranch === undefined) delete process.env.RENDER_GIT_BRANCH;
+      else process.env.RENDER_GIT_BRANCH = prevBranch;
+    }
   });
   it('/readyz confirma la conexión a la base', async () => {
     const app = buildApp({ pool, env: testEnv(), logLevel: 'silent' });
