@@ -80,7 +80,10 @@ const inputsOf = (i: LedgerInput) => ({
 export async function previewLoan(ctx: Ctx, i: LedgerInput) {
   const party = await checkParties(ctx, i);
   const t = termsOf(ctx, i);
-  if (i.accountId) await activeAccount(ctx, i.accountId);
+  if (i.accountId) {
+    const a = await activeAccount(ctx, i.accountId);
+    if (a.type === 'credit' && i.direction === 'borrowed') throw unprocessable('VALIDATION_ERROR', 'Un préstamo recibido no se desembolsa en una tarjeta de crédito');
+  }
   const drafts = buildSchedule(t);
   const sum = (c: ChargeDraft['concept']) => drafts.filter((d) => d.concept === c).reduce((a, d) => a + d.amount, 0n);
   return {
@@ -99,7 +102,10 @@ export async function createLoan(ctx: Ctx, i: LedgerInput & { previewToken: stri
   const party = await checkParties(ctx, input);
   const t = termsOf(ctx, input);
   checkPreviewToken(ctx.previewSecret, previewToken, { scope: 'loan.create', ownerId: ctx.ownerId, inputs: inputsOf(input), state: null }, ctx.nowMs);
-  if (input.accountId) await activeAccount(ctx, input.accountId);
+  if (input.accountId) {
+    const acc = await activeAccount(ctx, input.accountId);
+    if (input.direction === 'borrowed' && acc.type === 'credit') throw unprocessable('VALIDATION_ERROR', 'El desembolso recibido no se registra en una tarjeta de crédito');
+  }
   const drafts = buildSchedule(t);
 
   const loan = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
@@ -328,18 +334,39 @@ export async function createPayment(ctx: Ctx, loanId: string, body: PaymentInput
   if (p.issues.length > 0) throw unprocessable(p.issues[0]!.code === 'REMAINDER' ? 'PAYMENT_REMAINDER' : 'OVER_ALLOCATION', 'The allocation is not valid', p.issues);
   checkPreviewToken(ctx.previewSecret, previewToken, { scope: 'loan.payment', ownerId: ctx.ownerId, inputs: payInputs(loanId, i), state: { pendings: p.pendings, alloc: p.allocations.map((a) => [a.chargeId, m(a.amount)]) } }, ctx.nowMs);
   const w = await writePayment(ctx, p, i.accountId, 'regular', p.loan.direction === 'lent' ? 'Pago de préstamo recibido' : 'Pago de préstamo');
+  // Si ya no queda saldo pendiente en el préstamo (en préstamos con fecha/cuotas), cerrarlo en BD para no aceptar pagos fantasma.
+  if (p.loan.repayment_kind !== 'open' && (await pendingItems(ctx, loanId)).length === 0) {
+    await sql`update loan set status = 'closed', closed_reason = 'Pagado' where owner_id = ${ctx.ownerId} and id = ${loanId} and status = 'open'`.execute(ctx.trx);
+  }
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'loan.payment', entityType: 'loan', entityId: loanId, changes: { amount: m(p.amount), paymentId: w.paymentId, remainder: m(p.remainder) } });
   return { paymentId: w.paymentId, operationId: w.operationId, loan: await getLedgerLoan(ctx, loanId) };
 }
 
 export async function reversePayment(ctx: Ctx, paymentId: string, reason: string) {
-  const p = await one<{ id: string; loan_id: string; operation_id: string; status: string }>(ctx.trx, sql<{ id: string; loan_id: string; operation_id: string; status: string }>`
-    select id, loan_id, operation_id, status from loan_payment where owner_id = ${ctx.ownerId} and id = ${paymentId} for update`);
+  const p = await one<{ id: string; loan_id: string; operation_id: string; status: string; kind: string }>(ctx.trx, sql<{ id: string; loan_id: string; operation_id: string; status: string; kind: string }>`
+    select id, loan_id, operation_id, status, kind from loan_payment where owner_id = ${ctx.ownerId} and id = ${paymentId} for update`);
   if (!p) throw notFound('Payment');
   if (p.status !== 'active') throw unprocessable('ALREADY_REVERSED', 'El pago ya está revertido');
   await sql`select 1 from loan where owner_id = ${ctx.ownerId} and id = ${p.loan_id} for update`.execute(ctx.trx);
   const reversalId = await reverseOperationCore(ctx, p.operation_id, reason.trim(), undefined, { allowLinked: true });
   await sql`update loan_payment set status = 'reversed', reason = ${reason.trim()} where owner_id = ${ctx.ownerId} and id = ${paymentId}`.execute(ctx.trx);
+  // Si se revierte un pago anticipado (payoff), restaura los cargos anulados/prorrateados y anula el devengo extra creado.
+  if (p.kind === 'payoff') {
+    const ev = await one<{ changes: { voidedIds?: string[]; prorated?: Array<{ id: string; amount: string; note: string | null }>; extraIds?: string[] } | null }>(ctx.trx, sql`
+      select changes from audit_event
+      where owner_id = ${ctx.ownerId} and action = 'loan.payoff' and entity_id = ${p.loan_id} and changes->>'paymentId' = ${paymentId}
+      order by at desc limit 1`);
+    const ch = ev?.changes;
+    for (const cid of ch?.voidedIds ?? []) {
+      await sql`update loan_charge set status = 'active' where owner_id = ${ctx.ownerId} and id = ${cid}`.execute(ctx.trx);
+    }
+    for (const pr of ch?.prorated ?? []) {
+      await sql`update loan_charge set status = 'active', amount = ${pr.amount}, note = ${pr.note} where owner_id = ${ctx.ownerId} and id = ${pr.id}`.execute(ctx.trx);
+    }
+    for (const eid of ch?.extraIds ?? []) {
+      await sql`update loan_charge set status = 'void' where owner_id = ${ctx.ownerId} and id = ${eid}`.execute(ctx.trx);
+    }
+  }
   await sql`update loan set status = 'open', closed_reason = null where owner_id = ${ctx.ownerId} and id = ${p.loan_id} and status = 'closed'`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'loan.payment_reverse', entityType: 'loan', entityId: p.loan_id, reason: reason.trim(), changes: { paymentId, reversalId } });
   return getLedgerLoan(ctx, p.loan_id);
@@ -410,9 +437,18 @@ export async function payoff(ctx: Ctx, loanId: string, body: { accountId: string
   await activeAccount(ctx, body.accountId);
   const paidOn = resolveDate(ctx, body.paidOn);
   const allocations: PayPlan['allocations'] = [];
+  const voidedIds: string[] = [];
+  const prorated: Array<{ id: string; amount: string; note: string | null }> = [];
+  const extraIds: string[] = [];
   for (const l of p.lines) {
-    if (l.action === 'void') { await sql`update loan_charge set status = 'void' where owner_id = ${ctx.ownerId} and id = ${l.chargeId}`.execute(ctx.trx); continue; }
+    if (l.action === 'void') {
+      voidedIds.push(l.chargeId);
+      await sql`update loan_charge set status = 'void' where owner_id = ${ctx.ownerId} and id = ${l.chargeId}`.execute(ctx.trx);
+      continue;
+    }
     if (l.action === 'prorated') {
+      const prev = await one<{ amount: string; note: string | null }>(ctx.trx, sql<{ amount: string; note: string | null }>`select amount, note from loan_charge where owner_id = ${ctx.ownerId} and id = ${l.chargeId}`);
+      if (prev) prorated.push({ id: l.chargeId, amount: prev.amount, note: prev.note });
       // El cargo queda en lo devengado: lo ya pagado más lo que se liquida ahora.
       const paid = parseMoney((await one<{ paid: string }>(ctx.trx, sql<{ paid: string }>`select coalesce(sum(a.amount), 0.00) as paid from loan_allocation a join loan_payment pp on pp.id = a.payment_id where a.charge_id = ${l.chargeId} and pp.status = 'active'`))!.paid);
       if (paid + l.settle === 0n) await sql`update loan_charge set status = 'void' where owner_id = ${ctx.ownerId} and id = ${l.chargeId}`.execute(ctx.trx);
@@ -422,13 +458,14 @@ export async function payoff(ctx: Ctx, loanId: string, body: { accountId: string
   }
   for (const x of p.extra) {
     const id = await insertCharge(ctx, loanId, { concept: 'interest', due: ctx.today, amount: x.amount, periodNo: x.periodNo, note: 'Interés devengado hasta el pago anticipado' });
+    extraIds.push(id);
     allocations.push({ chargeId: id, amount: x.amount, pending: x.amount });
   }
   if (p.total <= 0n) throw unprocessable('NOTHING_TO_PAY', 'No hay nada que pagar');
   const plan: PayPlan = { loan: p.loan, amount: p.total, paidOn, allocations, remainder: 0n, proposed: false, issues: [], pendings: [] };
   const w = await writePayment(ctx, plan, body.accountId, 'payoff', p.loan.direction === 'lent' ? 'Cancelación anticipada de préstamo recibido' : 'Cancelación anticipada de préstamo');
   await sql`update loan set status = 'closed', closed_reason = 'Pago anticipado' where owner_id = ${ctx.ownerId} and id = ${loanId}`.execute(ctx.trx);
-  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'loan.payoff', entityType: 'loan', entityId: loanId, changes: { total: m(p.total), mode: p.loan.early_payoff } });
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'loan.payoff', entityType: 'loan', entityId: loanId, changes: { paymentId: w.paymentId, total: m(p.total), mode: p.loan.early_payoff, voidedIds, prorated, extraIds } });
   return { paymentId: w.paymentId, operationId: w.operationId, loan: await getLedgerLoan(ctx, loanId) };
 }
 
