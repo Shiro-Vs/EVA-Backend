@@ -74,6 +74,7 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
   if (amount <= 0n) throw unprocessable('VALIDATION_ERROR', 'El importe debe ser positivo');
   const date = resolveDate(ctx, i.date);
   const from = await activeAccount(ctx, i.accountId);
+  if (i.kind === 'income' && from.type === 'credit') throw unprocessable('VALIDATION_ERROR', 'Un ingreso no se registra en una tarjeta de crédito; usa una transferencia para pagarla');
   if (i.contactId) await requireOwned(ctx, 'contact', i.contactId);
   if (i.categoryId) await assertActiveCategory(ctx, i.categoryId);
 
@@ -113,19 +114,45 @@ export async function createOperation(ctx: Ctx, i: CreateOperationInput) {
   return { ...created, classification, budgetImpact };
 }
 
+/** Vínculos de una operación con registros de dominio (cobros, pagos, préstamos, tarjetas) que deben gestionarse desde su propio registro. */
+export async function operationLinks(ctx: Ctx, id: string) {
+  const r = await one<{
+    receipt_id: string | null; supplier_payment_id: string | null; refund_id: string | null;
+    bank_loan_payment_id: string | null; loan_payment_id: string | null; loan_disbursement_id: string | null;
+    card_statement_payment_id: string | null; installment_plan_id: string | null;
+  }>(ctx.trx, sql`
+    select (select id from receipt where owner_id = ${ctx.ownerId} and operation_id = ${id} limit 1) as receipt_id,
+           (select id from supplier_payment where owner_id = ${ctx.ownerId} and operation_id = ${id} limit 1) as supplier_payment_id,
+           (select id from refund where owner_id = ${ctx.ownerId} and operation_id = ${id} limit 1) as refund_id,
+           (select id from bank_loan_payment where owner_id = ${ctx.ownerId} and operation_id = ${id} limit 1) as bank_loan_payment_id,
+           (select id from loan_payment where owner_id = ${ctx.ownerId} and operation_id = ${id} limit 1) as loan_payment_id,
+           (select id from loan where owner_id = ${ctx.ownerId} and disbursement_operation_id = ${id} limit 1) as loan_disbursement_id,
+           (select id from card_statement_payment where owner_id = ${ctx.ownerId} and operation_id = ${id} and status = 'active' limit 1) as card_statement_payment_id,
+           (select id from card_installment_plan where owner_id = ${ctx.ownerId} and operation_id = ${id} and status = 'active' limit 1) as installment_plan_id`);
+  return {
+    receiptId: r?.receipt_id ?? null,
+    supplierPaymentId: r?.supplier_payment_id ?? null,
+    refundId: r?.refund_id ?? null,
+    bankLoanPaymentId: r?.bank_loan_payment_id ?? null,
+    loanPaymentId: r?.loan_payment_id ?? null,
+    loanDisbursementId: r?.loan_disbursement_id ?? null,
+    cardStatementPaymentId: r?.card_statement_payment_id ?? null,
+    installmentPlanId: r?.installment_plan_id ?? null,
+  };
+}
+
+export const hasOperationLink = (l: Awaited<ReturnType<typeof operationLinks>>) =>
+  !!(l.receiptId || l.supplierPaymentId || l.refundId || l.bankLoanPaymentId || l.loanPaymentId || l.loanDisbursementId || l.cardStatementPaymentId || l.installmentPlanId);
+
 export async function getOperation(ctx: Ctx, id: string) {
   const op = await one<{ id: string; kind: string; occurred_on: string; description: string; status: string; reversal_of_id: string | null; reason: string | null; version: number; created_at: unknown; contact_id: string | null; category_id: string | null; category_name: string | null; concept: string; occurred_time: string | null }>(
     ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.occurred_time, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, o.concept, c.name as category_name
       from financial_operation o left join category c on c.id = o.category_id and c.owner_id = o.owner_id where o.owner_id = ${ctx.ownerId} and o.id = ${id}`);
   if (!op) throw notFound('Operation');
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
-  // A qué registro pertenece (un cobro, un pago al proveedor o una devolución): esos se corrigen por su propio registro.
-  const links = await one<{ receipt_id: string | null; supplier_payment_id: string | null; refund_id: string | null }>(ctx.trx, sql`
-    select (select id from receipt where operation_id = ${id}) as receipt_id,
-           (select id from supplier_payment where operation_id = ${id}) as supplier_payment_id,
-           (select id from refund where operation_id = ${id}) as refund_id`);
+  const links = await operationLinks(ctx, id);
   return {
-    links: { receiptId: links?.receipt_id ?? null, supplierPaymentId: links?.supplier_payment_id ?? null, refundId: links?.refund_id ?? null },
+    links,
     id: op.id, kind: op.kind, occurredOn: op.occurred_on, occurredTime: op.occurred_time ? op.occurred_time.slice(0, 5) : null, description: op.description, status: op.status,
     reversalOfId: op.reversal_of_id, reason: op.reason, version: op.version, createdAt: ts(op.created_at),
     concept: op.concept, contactId: op.contact_id, category: op.category_id ? { id: op.category_id, name: op.category_name } : null, classificationTrail: await decisionsOf(ctx, id),
@@ -144,9 +171,8 @@ export async function reverseOperationCore(ctx: Ctx, id: string, reason: string,
   if (op.status === 'reversed' || op.kind === 'reversal') throw unprocessable('ALREADY_REVERSED', 'The operation is already reversed or is itself a reversal');
 
   if (!opts.allowLinked) {
-    const linked = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-      select (select count(*) from receipt where operation_id = ${id}) + (select count(*) from supplier_payment where operation_id = ${id}) + (select count(*) from refund where operation_id = ${id}) + (select count(*) from bank_loan_payment where operation_id = ${id}) as n`);
-    if (Number(linked?.n ?? 0) > 0) throw unprocessable('OPERATION_LINKED', 'This operation backs a receipt, refund or supplier payment: reverse that record instead');
+    const links = await operationLinks(ctx, id);
+    if (hasOperationLink(links)) throw unprocessable('OPERATION_LINKED', 'This operation backs a receipt, refund, loan, card or supplier payment: reverse that record instead');
   }
 
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id}`);
@@ -158,6 +184,20 @@ export async function reverseOperationCore(ctx: Ctx, id: string, reason: string,
     await sql`insert into account_entry (owner_id, operation_id, account_id, amount) values (${ctx.ownerId}, ${rev!.id}, ${e.account_id}, ${formatMoney(-parseMoney(e.amount, { allowNegative: true }))})`.execute(ctx.trx);
   }
   await sql`update financial_operation set status = 'reversed' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+
+  // Compensa aportes/deducciones de metas ligados a esta operación para no dejar reservas fantasma ni perder descuentos.
+  const goalContribs = await rows<{ goal_id: string; account_id: string; amount: string; kind: string }>(ctx.trx, sql`
+    select goal_id, account_id, amount, kind from goal_contribution
+    where owner_id = ${ctx.ownerId} and operation_id = ${id} and kind in ('transfer', 'spend')`);
+  for (const gc of goalContribs) {
+    const amt = parseMoney(gc.amount, { allowNegative: true });
+    if (amt === 0n) continue;
+    const compKind = amt > 0n ? 'release' : 'reserve';
+    await sql`
+      insert into goal_contribution (owner_id, goal_id, account_id, amount, kind, operation_id, note, created_by)
+      values (${ctx.ownerId}, ${gc.goal_id}, ${gc.account_id}, ${formatMoney(-amt)}, ${compKind}, ${null}, 'Compensado por reversión de movimiento', ${ctx.actorId})`.execute(ctx.trx);
+  }
+
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'operation.reverse', entityType: 'financial_operation', entityId: id, reason });
   return rev!.id;
 }

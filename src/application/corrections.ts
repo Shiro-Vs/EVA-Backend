@@ -7,7 +7,7 @@ import { one, rows } from '../infra/db/db.js';
 import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
 import type { Ctx } from './context.js';
 import { assertActiveCategory } from './categories.js';
-import { activeAccount, getOperation, insertOperation, requireOwned, resolveDate, reverseOperationCore } from './operations.js';
+import { activeAccount, getOperation, hasOperationLink, insertOperation, operationLinks, requireOwned, resolveDate, reverseOperationCore } from './operations.js';
 import { buildPlan as buildReceiptPlan, getReceipt, issueJson, writeReceipt, type ReceiptInput } from './receipts.js';
 
 const m = (v: bigint) => formatMoney(v);
@@ -46,9 +46,7 @@ export async function patchOperation(ctx: Ctx, id: string, version: number, p: O
   if (p.categoryId) await assertActiveCategory(ctx, p.categoryId);
   if (p.contactId) await requireOwned(ctx, 'contact', p.contactId);
   if (p.contactId !== undefined && p.contactId !== op.contact_id) {
-    const linked = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-      select (select count(*) from receipt where operation_id = ${id}) + (select count(*) from supplier_payment where operation_id = ${id}) + (select count(*) from refund where operation_id = ${id}) as n`);
-    if (Number(linked?.n ?? 0) > 0) throw unprocessable('OPERATION_LINKED', 'The contact of a receipt, refund or supplier payment cannot be changed');
+    if (hasOperationLink(await operationLinks(ctx, id))) throw unprocessable('OPERATION_LINKED', 'The contact of a linked operation cannot be changed');
   }
   const next = {
     description: p.description === undefined ? op.description : p.description.trim(),
@@ -85,20 +83,18 @@ export async function patchReceipt(ctx: Ctx, id: string, version: number, p: { n
 export interface OperationCorrection { amount?: string; accountId?: string; toAccountId?: string; date?: string }
 
 interface OpPlan {
-  op: { id: string; kind: 'income' | 'expense' | 'transfer'; occurred_on: string; description: string; contact_id: string | null; category_id: string | null; source: string; version: number };
+  op: { id: string; kind: 'income' | 'expense' | 'transfer'; occurred_on: string; occurred_time: string | null; concept: string; description: string; contact_id: string | null; category_id: string | null; source: string; version: number };
   oldFrom: string; oldTo: string | null; oldAmount: bigint; oldDate: string;
   newFrom: string; newTo: string | null; newAmount: bigint; newDate: string;
 }
 
 async function buildOpPlan(ctx: Ctx, id: string, i: OperationCorrection): Promise<OpPlan> {
   const op = await one<OpPlan['op'] & { status: string }>(ctx.trx, sql`
-    select id, kind, status, occurred_on, description, contact_id, category_id, source, version from financial_operation where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+    select id, kind, status, occurred_on, occurred_time, concept, description, contact_id, category_id, source, version from financial_operation where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!op) throw notFound('Operation');
   if (op.status === 'reversed' || (op.kind as string) === 'reversal') throw unprocessable('ALREADY_REVERSED', 'The operation is already reversed or is itself a reversal');
   if (!['income', 'expense', 'transfer'].includes(op.kind)) throw unprocessable('NOT_CORRECTABLE', 'This kind of operation cannot be corrected');
-  const linked = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select (select count(*) from receipt where operation_id = ${id}) + (select count(*) from supplier_payment where operation_id = ${id}) + (select count(*) from refund where operation_id = ${id}) as n`);
-  if (Number(linked?.n ?? 0) > 0) throw unprocessable('OPERATION_LINKED', 'This operation backs a receipt, refund or supplier payment: correct that record instead');
+  if (hasOperationLink(await operationLinks(ctx, id))) throw unprocessable('OPERATION_LINKED', 'This operation backs a receipt, refund, loan, card or supplier payment: correct that record instead');
 
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
   let oldFrom: string; let oldTo: string | null = null; let oldAmount: bigint;
@@ -117,6 +113,7 @@ async function buildOpPlan(ctx: Ctx, id: string, i: OperationCorrection): Promis
   const newTo = op.kind === 'transfer' ? (i.toAccountId ?? oldTo) : null;
   if (op.kind !== 'transfer' && i.toAccountId) throw unprocessable('VALIDATION_ERROR', 'toAccountId only applies to transfers');
   const from = await activeAccount(ctx, newFrom);
+  if (op.kind === 'income' && from.type === 'credit') throw unprocessable('VALIDATION_ERROR', 'Un ingreso no se registra en una tarjeta de crédito');
   if (newTo) {
     if (newTo === newFrom) throw unprocessable('VALIDATION_ERROR', 'The source and destination accounts must differ');
     const to = await activeAccount(ctx, newTo);
@@ -164,7 +161,7 @@ export async function applyOperationCorrection(ctx: Ctx, id: string, body: Opera
   const entries = p.op.kind === 'transfer'
     ? [{ accountId: p.newFrom, amount: -p.newAmount }, { accountId: p.newTo!, amount: p.newAmount }]
     : [{ accountId: p.newFrom, amount: p.op.kind === 'income' ? p.newAmount : -p.newAmount }];
-  const newId = await insertOperation(ctx, { kind: p.op.kind, date: parseISO(p.newDate), description: p.op.description, contactId: p.op.contact_id, categoryId: p.op.category_id, source: p.op.source }, entries);
+  const newId = await insertOperation(ctx, { kind: p.op.kind, date: parseISO(p.newDate), time: p.op.occurred_time, concept: p.op.concept as 'ordinary' | 'loan_disbursement' | 'loan_payment' | 'reconciliation', description: p.op.description, contactId: p.op.contact_id, categoryId: p.op.category_id, source: p.op.source }, entries);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'operation.correct', entityType: 'financial_operation', entityId: id, reason: reason.trim(),
     changes: { replacedBy: newId, reversalId, from: { amount: m(p.oldAmount), accountId: p.oldFrom, date: p.oldDate }, to: { amount: m(p.newAmount), accountId: p.newFrom, date: p.newDate } } });
   return { reversalId, operation: await getOperation(ctx, newId), effects: (await opPreviewJson(ctx, p)).effects };
