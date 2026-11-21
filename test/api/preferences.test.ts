@@ -176,7 +176,7 @@ describe('Avisos: qué avisar y cuándo (09 §7)', () => {
     await a.post(u.token, `/bank-loans/${loan.id}/changes`, { ...chg, previewToken: pv.body.previewToken });
     const r = (await a.get(u.token, '/reminders')).body.items;
     expect(r.map((i: any) => i.kind).sort()).toEqual(['capture', 'loan', 'recurring']);
-    expect(r.find((i: any) => i.kind === 'capture')).toMatchObject({ count: 1, route: '/capture', dueDate: null });
+    expect(r.find((i: any) => i.kind === 'capture')).toMatchObject({ count: 1, route: '/capture', dueDate: null, fireAt: ['2026-10-13T09:00'] });
     expect(r.find((i: any) => i.kind === 'loan')).toMatchObject({ dueDate: '2026-10-14', route: `/bank-loan/${loan.id}` });
     const up = (await a.get(u.token, '/dashboard')).body.cards.find((c: any) => c.id === 'upcoming_payments').data.items;
     expect(up.map((i: any) => i.type).sort()).toEqual(['bank_loan', 'recurring']);

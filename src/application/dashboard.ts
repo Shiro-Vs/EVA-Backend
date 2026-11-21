@@ -162,20 +162,26 @@ export async function reminders(ctx: Ctx, horizonDays = 14) {
   const today = formatISO(ctx.today);
   const k = prefs.kinds;
 
+  const pushAt = (out: string[], date: string, time: string) => {
+    const q = outsideQuiet(time, prefs.quiet);
+    const d = q.nextDay ? formatISO(addDays(parseISO(date), 1)) : date;
+    const stamp = `${d}T${q.time}`;
+    if (stamp >= `${localNow.date}T${localNow.time}` && d <= formatISO(addDays(ctx.today, horizonDays)) && !out.includes(stamp)) out.push(stamp);
+  };
+  const nextDailySlot = (): { fireAt: string[]; overdue: boolean } => {
+    const out: string[] = [];
+    pushAt(out, prefs.time >= localNow.time ? localNow.date : formatISO(addDays(ctx.today, 1)), prefs.time);
+    return { fireAt: out, overdue: false };
+  };
+
   const schedule = (kind: 'renewal' | 'collection' | 'recurring' | 'loan', due: string): { fireAt: string[]; overdue: boolean } => {
     const cfg = k[kind];
     const overdue = due < today;
     const out: string[] = [];
-    const push = (date: string, time: string) => {
-      const q = outsideQuiet(time, prefs.quiet);
-      const d = q.nextDay ? formatISO(addDays(parseISO(date), 1)) : date;
-      const stamp = `${d}T${q.time}`;
-      if (stamp >= `${localNow.date}T${localNow.time}` && d <= formatISO(addDays(ctx.today, horizonDays)) && !out.includes(stamp)) out.push(stamp);
-    };
     if (overdue) {
       // Vencido: un solo aviso por día hasta que se resuelva, si el usuario lo pidió.
-      if (prefs.repeatOverdue) push(prefs.time >= localNow.time ? localNow.date : formatISO(addDays(ctx.today, 1)), prefs.time);
-    } else for (const lead of cfg.leadDays) push(formatISO(parseISO(due) - lead), prefs.time);
+      if (prefs.repeatOverdue) pushAt(out, prefs.time >= localNow.time ? localNow.date : formatISO(addDays(ctx.today, 1)), prefs.time);
+    } else for (const lead of cfg.leadDays) pushAt(out, formatISO(parseISO(due) - lead), prefs.time);
     return { fireAt: out.sort(), overdue };
   };
   const mk = (kind: keyof typeof k, id: string, due: string | null, count: number, detail: string, route: string, sched: { fireAt: string[]; overdue: boolean } | null): Reminder => ({
@@ -187,8 +193,8 @@ export async function reminders(ctx: Ctx, horizonDays = 14) {
   if (k.collection.enabled) for (const c of await collectionsDue(ctx, horizonDays)) items.push(mk('collection', `collection:${c.due_date}`, c.due_date, Number(c.n), `${c.n} cobro(s) por ${m(c.total)}`, '/contacts', schedule('collection', c.due_date)));
   if (k.recurring.enabled) for (const o of await recurringDue(ctx, horizonDays)) items.push(mk('recurring', `recurring:${o.occurrence_id}`, o.due_date, 1, `${o.name} (${m(o.amount)})`, '/recurring', schedule('recurring', o.due_date)));
   if (k.loan.enabled) for (const b of await bankInstallments(ctx, horizonDays)) items.push(mk('loan', `loan:${b.loan_id}:${b.no}`, b.due_date, 1, `${b.loan_name}: cuota ${b.no} (${m(b.remaining)})`, `/bank-loan/${b.loan_id}`, schedule('loan', b.due_date)));
-  if (k.budget.enabled) for (const b of await listBudgets(ctx)) if (b.current.level !== null) items.push(mk('budget', `budget:${b.id}:${b.current.period.start}:${b.current.level}`, null, 1, `${b.name} al ${b.current.percent ?? 0} %`, `/budgets/${b.id}`, null));
-  if (k.capture.enabled) { const c = await capturePending(ctx); if (c.pendingProposals > 0) items.push(mk('capture', 'capture:pending', null, c.pendingProposals, `${c.pendingProposals} propuesta(s) por revisar`, '/capture', null)); }
+  if (k.budget.enabled) for (const b of await listBudgets(ctx)) if (b.current.level !== null) items.push(mk('budget', `budget:${b.id}:${b.current.period.start}:${b.current.level}`, null, 1, `${b.name} al ${b.current.percent ?? 0} %`, `/budgets/${b.id}`, nextDailySlot()));
+  if (k.capture.enabled) { const c = await capturePending(ctx); if (c.pendingProposals > 0) items.push(mk('capture', 'capture:pending', null, c.pendingProposals, `${c.pendingProposals} propuesta(s) por revisar`, '/capture', nextDailySlot())); }
 
   items.sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || a.id.localeCompare(b.id));
   return { enabled: true, discreet: prefs.discreet, time: prefs.time, items };
