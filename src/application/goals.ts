@@ -23,15 +23,18 @@ async function load(ctx: Ctx, id: string, forUpdate = false) {
 const balanceOf = async (ctx: Ctx, accountId: string) =>
   parseMoney((await one<{ b: string }>(ctx.trx, sql<{ b: string }>`select coalesce(sum(amount), 0.00) as b from account_entry where owner_id = ${ctx.ownerId} and account_id = ${accountId}`))!.b, { allowNegative: true });
 
-/** Total reservado en una cuenta entre todas las metas. */
+/** Total reservado en una cuenta entre todas las metas activas. */
 export const reservedOn = async (ctx: Ctx, accountId: string) =>
-  parseMoney((await one<{ r: string }>(ctx.trx, sql<{ r: string }>`select coalesce(sum(amount), 0.00) as r from goal_contribution where owner_id = ${ctx.ownerId} and account_id = ${accountId}`))!.r, { allowNegative: true });
+  parseMoney((await one<{ r: string }>(ctx.trx, sql<{ r: string }>`
+    select coalesce(sum(c.amount), 0.00) as r
+    from goal_contribution c join goal g on g.id = c.goal_id and g.owner_id = c.owner_id
+    where c.owner_id = ${ctx.ownerId} and c.account_id = ${accountId} and g.status = 'active'`))!.r, { allowNegative: true });
 
 async function view(ctx: Ctx, g: GoalRow) {
   const per = await rows<{ account_id: string; name: string; reserved: string; balance: string; total_reserved: string }>(ctx.trx, sql`
     select c.account_id, a.name, sum(c.amount) as reserved,
            coalesce((select sum(e.amount) from account_entry e where e.account_id = c.account_id and e.owner_id = c.owner_id), 0.00) as balance,
-           (select sum(x.amount) from goal_contribution x where x.account_id = c.account_id and x.owner_id = c.owner_id) as total_reserved
+           coalesce((select sum(x.amount) from goal_contribution x join goal xg on xg.id = x.goal_id and xg.owner_id = x.owner_id where x.account_id = c.account_id and x.owner_id = c.owner_id and xg.status = 'active'), 0.00) as total_reserved
     from goal_contribution c join account a on a.id = c.account_id and a.owner_id = c.owner_id
     where c.owner_id = ${ctx.ownerId} and c.goal_id = ${g.id} group by c.account_id, c.owner_id, a.name having sum(c.amount) <> 0 order by a.name`);
   const saved = per.reduce((a, r) => a + parseMoney(r.reserved), 0n);
@@ -153,7 +156,7 @@ export async function linkTransfer(ctx: Ctx, goalId: string, operationId: string
 export async function overview(ctx: Ctx) {
   const accs = await rows<{ id: string; name: string; type: string; balance: string; reserved: string }>(ctx.trx, sql`
     select a.id, a.name, a.type, coalesce((select sum(e.amount) from account_entry e where e.account_id = a.id and e.owner_id = a.owner_id), 0.00) as balance,
-           coalesce((select sum(c.amount) from goal_contribution c where c.account_id = a.id and c.owner_id = a.owner_id), 0.00) as reserved
+           coalesce((select sum(c.amount) from goal_contribution c join goal g on g.id = c.goal_id and g.owner_id = c.owner_id where c.account_id = a.id and c.owner_id = a.owner_id and g.status = 'active'), 0.00) as reserved
     from account a where a.owner_id = ${ctx.ownerId} and a.status = 'active' and a.type <> 'credit' order by a.is_default desc, a.created_at`);
   const items = accs.map((a) => {
     const bal = parseMoney(a.balance, { allowNegative: true }); const res = parseMoney(a.reserved, { allowNegative: true });
@@ -179,7 +182,7 @@ export async function reserveConflict(ctx: Ctx, accountId: string, outflow: bigi
   if (eaten <= 0n) return null;
   const goals = await rows<{ goal_id: string; name: string; reserved: string }>(ctx.trx, sql`
     select c.goal_id, g.name, sum(c.amount) as reserved from goal_contribution c join goal g on g.id = c.goal_id and g.owner_id = c.owner_id
-    where c.owner_id = ${ctx.ownerId} and c.account_id = ${accountId} group by c.goal_id, g.name having sum(c.amount) > 0 order by g.name`);
+    where c.owner_id = ${ctx.ownerId} and c.account_id = ${accountId} and g.status = 'active' group by c.goal_id, g.name having sum(c.amount) > 0 order by g.name`);
   return { eaten: eaten > reserved ? reserved : eaten, goals: goals.map((g) => ({ goalId: g.goal_id, name: g.name, reserved: m(g.reserved) })) };
 }
 

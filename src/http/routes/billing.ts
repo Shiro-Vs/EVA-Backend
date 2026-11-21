@@ -31,6 +31,11 @@ export function billingRoutes(app: FastifyInstance, deps: HttpDeps) {
     const body = parse(s.reasonBody, req.body);
     return withIdempotency(deps, req, reply, `POST /refunds/${id}/cancel`, body, async (ctx) => ({ status: 200, body: await refunds.cancelRefund(ctx, id, body.reason) }));
   });
+  app.post('/refunds/:id/reverse', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(s.reasonBody, req.body);
+    return withIdempotency(deps, req, reply, `POST /refunds/${id}/reverse`, body, async (ctx) => ({ status: 200, body: await refunds.reverseRefund(ctx, id, body.reason) }));
+  });
   app.post('/contacts/:id/debt-conversion/preview', async (req) => {
     const { id } = parse(idParam, req.params);
     const body = parse(s.debtConversionPreview, req.body);

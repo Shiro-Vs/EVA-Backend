@@ -5,7 +5,7 @@ import { notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
 import { ts, type Ctx } from './context.js';
-import { activeAccount, insertOperation, resolveDate } from './operations.js';
+import { activeAccount, insertOperation, resolveDate, reverseOperationCore } from './operations.js';
 
 /** Programa una devolución sin validar (la usan procesos que ya liberaron el crédito, como la baja). RN-X06: aún no sale dinero. */
 export async function insertPlannedRefund(ctx: Ctx, o: { receiptId: string; contactId: string; amount: bigint; reason: string }): Promise<string> {
@@ -82,5 +82,17 @@ export async function cancelRefund(ctx: Ctx, id: string, reason: string) {
   if (f.status !== 'planned') throw unprocessable('REFUND_NOT_PLANNED', 'Only a planned refund can be cancelled');
   await sql`update refund set status = 'cancelled' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'refund.cancel', entityType: 'refund', entityId: id, reason });
+  return getRefund(ctx, id);
+}
+
+/** Revierte una devolución ya pagada: crea la reversión de la salida de cuenta y devuelve el dinero al crédito libre del cobro. */
+export async function reverseRefund(ctx: Ctx, id: string, reason: string) {
+  const f = await one<{ status: string; amount: string; operation_id: string | null }>(ctx.trx, sql<{ status: string; amount: string; operation_id: string | null }>`
+    select status, amount, operation_id from refund where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  if (!f) throw notFound('Refund');
+  if (f.status !== 'paid' || !f.operation_id) throw unprocessable('REFUND_NOT_PAID', 'Only a paid refund can be reversed');
+  const reversalId = await reverseOperationCore(ctx, f.operation_id, reason, undefined, { allowLinked: true });
+  await sql`update refund set status = 'cancelled' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'refund.reverse', entityType: 'refund', entityId: id, reason, changes: { amount: formatMoney(parseMoney(f.amount)), operationId: f.operation_id, reversalOperationId: reversalId } });
   return getRefund(ctx, id);
 }

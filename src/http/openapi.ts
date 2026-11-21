@@ -76,6 +76,7 @@ export const ROUTES: Doc[] = [
   D('post', '/refunds', 'Devoluciones', 'Programa la devolución de crédito libre de un cobro', { body: s.refundCreate, idempotent: true, status: 201 }),
   D('post', '/refunds/{id}/pay', 'Devoluciones', 'Registra la salida real del dinero desde una cuenta', { body: s.refundPay, idempotent: true }),
   D('post', '/refunds/{id}/cancel', 'Devoluciones', 'Cancela una devolución programada (el dinero vuelve a ser crédito libre)', { body: s.reasonBody, idempotent: true }),
+  D('post', '/refunds/{id}/reverse', 'Devoluciones', 'Revierte una devolución ya pagada (crea la reversión en cuenta y devuelve el crédito libre)', { body: s.reasonBody, idempotent: true }),
   D('get', '/loans', 'Préstamos', 'Préstamos otorgados (por conversión de deuda), con sus componentes'),
   D('get', '/loans/{id}', 'Préstamos', 'Detalle de un préstamo con origen y saldo de cada componente'),
 

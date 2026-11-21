@@ -87,6 +87,14 @@ describe('A10 · baja con el ciclo pagado al proveedor y anticipos futuros (RN-X
     expect(Number((await api.get(w.u.token, `/accounts/${w.bcp.id}`)).body.balance)).toBe(Number(balanceBefore) - 100);
     expect((await api.post(w.u.token, `/refunds/${refunds[0].id}/pay`, { accountId: w.bcp.id })).body.error.code).toBe('REFUND_NOT_PLANNED');
 
+    // Revertir una devolución ya pagada: restaura el saldo de la cuenta y devuelve el crédito libre al contacto.
+    const rev = await api.post(w.u.token, `/refunds/${refunds[0].id}/reverse`, { reason: 'Cuenta equivocada' });
+    expect(rev.status, JSON.stringify(rev.body)).toBe(200);
+    expect(rev.body).toMatchObject({ status: 'cancelled' });
+    expect((await api.get(w.u.token, `/accounts/${w.bcp.id}`)).body.balance).toBe(balanceBefore);
+    expect((await api.get(w.u.token, `/contacts/${w.ana.id}/credit`)).body.free).toBe('100.00');
+    expect((await api.post(w.u.token, `/refunds/${refunds[0].id}/reverse`, { reason: 'otra vez' })).body.error.code).toBe('REFUND_NOT_PAID');
+
     // No se puede dar de baja dos veces; la plaza deja de contar cuando llega su fecha final.
     expect((await preview(w.u.token, w.seat.id)).body.error.code).toBe('SEAT_ALREADY_ENDING');
     expect((await api.get(w.u.token, `/subscriptions/${w.svc.id}/seats`)).body.items.map((s: any) => s.label)).toContain('Cuenta 1');

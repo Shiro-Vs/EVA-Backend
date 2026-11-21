@@ -50,7 +50,10 @@ describe('A21 · reserva para una meta (RN-GO02/GO03)', () => {
     expect((await reserve(w, g.id, '10.00', card.id)).body.error.code).toBe('GOAL_ACCOUNT_TYPE');
     await api.post(w.u.token, `/goals/${g.id}/archive`, {});
     expect((await reserve(w, g.id, '10.00')).body.error.code).toBe('GOAL_ARCHIVED');
+    // Mientras la meta está archivada, su ahorro ya no bloquea el saldo libre ni los gastos.
+    expect((await api.get(w.u.token, '/goals/overview')).body.accounts[0]).toMatchObject({ reserved: '0.00', free: '100.00', overReserved: false });
     expect((await api.post(w.u.token, `/goals/${g.id}/restore`, {})).body.status).toBe('active');
+    expect((await api.get(w.u.token, '/goals/overview')).body.accounts[0]).toMatchObject({ reserved: '30.00', free: '70.00', overReserved: false });
   });
 
   it('liberar devuelve el dinero a libre; no se libera más de lo reservado', async () => {
