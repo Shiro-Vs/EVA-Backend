@@ -74,19 +74,31 @@ export async function getGoal(ctx: Ctx, id: string) {
 }
 
 export async function createGoal(ctx: Ctx, i: GoalInput) {
-  if (i.targetDate && i.targetDate <= formatISO(ctx.today)) throw unprocessable('GOAL_DATE_PAST', 'La fecha de la meta debe ser posterior a hoy');
+  const target = parseMoney(i.targetAmount);
+  if (target <= 0n) throw unprocessable('VALIDATION_ERROR', 'El objetivo de la meta debe ser positivo');
+  if (i.targetDate && parseISO(i.targetDate) <= ctx.today) throw unprocessable('GOAL_DATE_PAST', 'La fecha de la meta debe ser posterior a hoy');
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
     insert into goal (owner_id, name, target_amount, target_date, icon, color, note)
-    values (${ctx.ownerId}, ${i.name.trim()}, ${m(parseMoney(i.targetAmount))}, ${i.targetDate ?? null}, ${i.icon ?? null}, ${i.color ?? null}, ${i.note?.trim() || null}) returning id`);
-  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'goal.create', entityType: 'goal', entityId: r!.id, changes: { name: i.name.trim(), target: m(parseMoney(i.targetAmount)) } });
+    values (${ctx.ownerId}, ${i.name.trim()}, ${m(target)}, ${i.targetDate ?? null}, ${i.icon ?? null}, ${i.color ?? null}, ${i.note?.trim() || null}) returning id`);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'goal.create', entityType: 'goal', entityId: r!.id, changes: { name: i.name.trim(), target: m(target) } });
   return getGoal(ctx, r!.id);
 }
 
 export async function patchGoal(ctx: Ctx, id: string, version: number, p: Partial<GoalInput>) {
   const g = await load(ctx, id, true);
   if (g.version !== version) throw conflict('CONFLICT_VERSION', 'The goal was modified; reload and retry');
+  let nextTarget = g.target_amount;
+  if (p.targetAmount !== undefined) {
+    const target = parseMoney(p.targetAmount);
+    if (target <= 0n) throw unprocessable('VALIDATION_ERROR', 'El objetivo de la meta debe ser positivo');
+    nextTarget = m(target);
+  }
+  if (p.targetDate !== undefined && p.targetDate !== null) {
+    const td = parseISO(p.targetDate);
+    if (p.targetDate !== g.target_date && td <= ctx.today) throw unprocessable('GOAL_DATE_PAST', 'La fecha de la meta debe ser posterior a hoy');
+  }
   await sql`
-    update goal set name = ${(p.name ?? g.name).trim()}, target_amount = ${p.targetAmount ? m(parseMoney(p.targetAmount)) : g.target_amount},
+    update goal set name = ${(p.name ?? g.name).trim()}, target_amount = ${nextTarget},
       target_date = ${p.targetDate === undefined ? g.target_date : p.targetDate}, icon = ${p.icon === undefined ? g.icon : p.icon},
       color = ${p.color === undefined ? g.color : p.color}, note = ${p.note === undefined ? g.note : (p.note?.trim() || null)}
     where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);

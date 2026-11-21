@@ -48,6 +48,8 @@ export function fromDatabase(err: unknown): AppError | null {
   if (hit) return new AppError(422, DB_TO_API[hit] ?? hit, hit);
   // Una FK compuesta que no encuentra su fila = referencia a algo inexistente o de otro propietario (A27): no revelar cuál.
   if (e.code === '23503') return new AppError(404, 'NOT_FOUND', 'Referenced resource not found');
+  if (e.code === '23514') return new AppError(422, 'VALIDATION_ERROR', 'El valor no cumple las reglas permitidas');
+  if (e.code === '22007' || e.code === '22008') return new AppError(422, 'VALIDATION_ERROR', 'Fecha u hora inválida');
   if (e.code === '23P01') return new AppError(409, 'CONCURRENT_UPDATE', 'Conflicting concurrent change; retry');
   if (e.code === '40001' || e.code === '40P01') return new AppError(409, 'CONCURRENT_UPDATE', 'Conflicting concurrent change; retry');
   return null;

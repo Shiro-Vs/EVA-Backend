@@ -11,11 +11,12 @@ import { createOperation } from './operations.js';
 
 const m = (v: string) => formatMoney(parseMoney(v));
 
-async function creditAccount(ctx: Ctx, accountId: string) {
+async function creditAccount(ctx: Ctx, accountId: string, requireActive = false) {
   const a = await one<{ id: string; type: string; name: string; status: string }>(ctx.trx, sql<{ id: string; type: string; name: string; status: string }>`
     select id, type, name, status from account where owner_id = ${ctx.ownerId} and id = ${accountId}`);
   if (!a) throw notFound('Account');
   if (a.type !== 'credit') throw unprocessable('NOT_CREDIT_ACCOUNT', 'Esta cuenta no es una tarjeta de crédito');
+  if (requireActive && a.status !== 'active') throw unprocessable('ACCOUNT_ARCHIVED', 'La cuenta está archivada');
   return a;
 }
 
@@ -33,7 +34,10 @@ export async function getCreditDetails(ctx: Ctx, accountId: string) {
 
 /** La línea de crédito es un dato informativo: no es dinero propio y no entra en ningún saldo (RN-AC05). */
 export async function putCreditDetails(ctx: Ctx, accountId: string, i: CreditDetailsInput) {
-  await creditAccount(ctx, accountId);
+  await creditAccount(ctx, accountId, true);
+  if (i.creditLine !== undefined && i.creditLine !== null && parseMoney(i.creditLine) <= 0n) {
+    throw unprocessable('VALIDATION_ERROR', 'La línea de crédito debe ser positiva');
+  }
   await sql`
     insert into credit_account_details (account_id, owner_id, credit_line, cutoff_day, due_day)
     values (${accountId}, ${ctx.ownerId}, ${i.creditLine ? m(i.creditLine) : null}, ${i.cutoffDay}, ${i.dueDay})
@@ -81,9 +85,15 @@ async function statementView(ctx: Ctx, s: StRow) {
 const stBase = sql`select id, account_id, cutoff_date, due_date, period_total, minimum_payment, total_balance, note, status, void_reason, created_at from card_statement`;
 
 export async function createStatement(ctx: Ctx, accountId: string, i: StatementInput) {
-  await creditAccount(ctx, accountId);
-  if (i.dueDate < i.cutoffDate) throw unprocessable('STATEMENT_DATES', 'La fecha límite de pago no puede ser anterior a la fecha de corte');
-  if (i.cutoffDate > formatISO(ctx.today)) throw unprocessable('FUTURE_DATE_NOT_ALLOWED', 'El corte aún no ocurrió');
+  await creditAccount(ctx, accountId, true);
+  const cutoff = parseISO(i.cutoffDate);
+  const due = parseISO(i.dueDate);
+  if (due < cutoff) throw unprocessable('STATEMENT_DATES', 'La fecha límite de pago no puede ser anterior a la fecha de corte');
+  if (cutoff > ctx.today) throw unprocessable('FUTURE_DATE_NOT_ALLOWED', 'El corte aún no ocurrió');
+  const periodTotal = parseMoney(i.periodTotal);
+  const minimumPayment = parseMoney(i.minimumPayment);
+  if (periodTotal <= 0n) throw unprocessable('VALIDATION_ERROR', 'El total del período debe ser positivo');
+  if (minimumPayment > periodTotal) throw unprocessable('VALIDATION_ERROR', 'El pago mínimo no puede superar el total del período');
   const dup = await one(ctx.trx, sql`select 1 from card_statement where owner_id = ${ctx.ownerId} and account_id = ${accountId} and cutoff_date = ${i.cutoffDate}::date and status = 'active'`);
   if (dup) throw conflict('STATEMENT_EXISTS', 'Ya registraste el estado de cuenta de ese corte');
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
@@ -162,7 +172,7 @@ async function planView(ctx: Ctx, p: PlanRow) {
 
 /** Compra en cuotas con la tarjeta: UN gasto por el total (sube la deuda) y un calendario de cuotas informativo (RN-T04). */
 export async function createInstallmentPurchase(ctx: Ctx, accountId: string, i: InstallmentInput) {
-  await creditAccount(ctx, accountId);
+  await creditAccount(ctx, accountId, true);
   const op = await createOperation(ctx, { kind: 'expense', accountId, amount: i.amount, date: i.date, description: i.description, categoryId: i.categoryId });
   const principal = parseMoney(i.amount);
   const plan = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`

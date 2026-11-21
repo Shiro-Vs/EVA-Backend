@@ -190,12 +190,14 @@ async function validate(ctx: Ctx, i: Partial<BudgetInput>) {
   const th = i.thresholds ? [...new Set(i.thresholds)].sort((a, b) => a - b) : undefined;
   if (th && th.some((t) => !Number.isInteger(t) || t < 1 || t > 1000)) throw unprocessable('VALIDATION_ERROR', 'Los avisos deben ser porcentajes enteros entre 1 y 1000');
   if (i.rolloverCap && !i.rollover) throw unprocessable('ROLLOVER_REQUIRED', 'El tope de arrastre solo aplica si el presupuesto arrastra el saldo no gastado');
+  if (i.rolloverCap && parseMoney(i.rolloverCap) <= 0n) throw unprocessable('VALIDATION_ERROR', 'El tope de arrastre debe ser positivo');
   return th;
 }
 
 export async function createBudget(ctx: Ctx, i: BudgetInput) {
   const th = (await validate(ctx, i)) ?? [80, 100];
   const limit = parseMoney(i.limit);
+  if (limit <= 0n) throw unprocessable('VALIDATION_ERROR', 'El límite del presupuesto debe ser positivo');
   const startsOn = i.startsOn ? periodOf(parseISO(i.startsOn), i.period).start : periodOf(ctx.today, i.period).start;
   const dup = await one(ctx.trx, sql`select 1 from budget where owner_id = ${ctx.ownerId} and status = 'active' and period = ${i.period}
     and coalesce(category_id, '00000000-0000-0000-0000-000000000000'::uuid) = coalesce(${i.categoryId ?? null}::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`);
@@ -213,11 +215,13 @@ export async function createBudget(ctx: Ctx, i: BudgetInput) {
 /** Cambiar el límite rige desde el inicio del período actual: los anteriores no se reescriben. */
 export async function patchBudget(ctx: Ctx, id: string, version: number, p: Partial<Omit<BudgetInput, 'categoryId' | 'period' | 'startsOn'>>) {
   const b = await load(ctx, id, true);
+  if (b.status !== 'active') throw unprocessable('BUDGET_ARCHIVED', 'El presupuesto está archivado');
   if (b.version !== version) throw conflict('CONFLICT_VERSION', 'The budget was modified; reload and retry');
   const th = await validate(ctx, { ...p, rollover: p.rollover ?? b.rollover });
   const rollover = p.rollover ?? b.rollover;
   const cap = p.rolloverCap === undefined ? (rollover ? b.rollover_cap : null) : p.rolloverCap;
   if (cap && !rollover) throw unprocessable('ROLLOVER_REQUIRED', 'El tope de arrastre solo aplica si el presupuesto arrastra el saldo no gastado');
+  if (p.limit !== undefined && parseMoney(p.limit) <= 0n) throw unprocessable('VALIDATION_ERROR', 'El límite del presupuesto debe ser positivo');
   await sql`
     update budget set name = ${(p.name ?? b.name).trim()}, include_children = ${p.includeSubcategories ?? b.include_children}, rollover = ${rollover},
       rollover_cap = ${rollover && cap ? m(cap) : null}, shared_view = ${p.sharedView ?? b.shared_view} where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
