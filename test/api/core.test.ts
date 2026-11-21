@@ -50,6 +50,21 @@ describe('autenticación (corte 1.5)', () => {
     expect(r.body.error.code).toBe('VALIDATION_ERROR');
     expect(r.body.error.details.length).toBeGreaterThan(0);
   });
+
+  it('PATCH /me permite actualizar nombre y foto de perfil (avatarDataUrl) y quitarla', async () => {
+    const u = await api.newUser('Ana');
+    const me = (await api.get(u.token, '/me')).body;
+    expect(me.avatarUrl).toBeNull();
+    const img = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const bad = await api.patch(u.token, '/me', { avatarDataUrl: 'https://evil.test/x.svg' }, me.version);
+    expect(bad.status).toBe(422);
+    const up = await api.patch(u.token, '/me', { displayName: 'Ana María', avatarDataUrl: img }, me.version);
+    expect(up.status).toBe(200);
+    expect(up.body).toMatchObject({ displayName: 'Ana María', avatarUrl: img });
+    const cleared = await api.patch(u.token, '/me', { avatarDataUrl: null }, up.body.version);
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.avatarUrl).toBeNull();
+  });
 });
 
 describe('cuentas y operaciones (corte 1.3, 1.4)', () => {

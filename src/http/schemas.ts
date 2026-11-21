@@ -15,6 +15,7 @@ export const profilePatch = z.object({
   displayName: text(80).optional(),
   defaultFreeDays: z.number().int().min(0).max(365).optional(),
   exitDaysLimit: z.number().int().min(0).max(365).nullable().optional(),
+  avatarDataUrl: z.string().regex(/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/, 'Imagen inválida (usa JPG, PNG o WEBP)').max(500_000, 'La imagen es demasiado grande').nullable().optional(),
 }).strict();
 
 export const suggestionCreate = z.object({

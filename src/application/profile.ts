@@ -14,6 +14,7 @@ export const mapProfile = (r: Row) => ({
   id: r.id,
   displayName: r.display_name,
   email: r.email,
+  avatarUrl: typeof r.preferences?.avatar === 'string' ? r.preferences.avatar : null,
   timezone: r.timezone,
   currency: r.currency,
   defaultFreeDays: r.default_free_days,
@@ -32,8 +33,12 @@ export async function ensureProfile(trx: Trx, user: AuthUser) {
     insert into user_profile (id, display_name, email) values (${user.userId}, ${name}, ${user.email ?? null})
     on conflict (id) do nothing returning id`);
   if (created) await seedCategories(trx, user.userId); // categorías sugeridas, editables y archivables (12 §11)
-  const row = await one<Row>(trx, sql<Row>`select * from user_profile where id = ${user.userId}`);
+  let row = await one<Row>(trx, sql<Row>`select * from user_profile where id = ${user.userId}`);
   if (!row) throw notFound('Profile');
+  if (user.email && row.email !== user.email) {
+    const synced = await one<Row>(trx, sql<Row>`update user_profile set email = ${user.email} where id = ${user.userId} returning *`);
+    if (synced) row = synced;
+  }
   return mapProfile(row);
 }
 
@@ -41,6 +46,7 @@ export interface ProfilePatch {
   displayName?: string;
   defaultFreeDays?: number;
   exitDaysLimit?: number | null;
+  avatarDataUrl?: string | null;
 }
 
 export async function patchProfile(trx: Trx, userId: string, version: number, p: ProfilePatch) {
@@ -52,8 +58,13 @@ export async function patchProfile(trx: Trx, userId: string, version: number, p:
     default_free_days: p.defaultFreeDays ?? cur.default_free_days,
     exit_days_limit: p.exitDaysLimit === undefined ? cur.exit_days_limit : p.exitDaysLimit,
   };
+  const nextPrefs = { ...(cur.preferences ?? {}) };
+  if (p.avatarDataUrl === null) delete nextPrefs.avatar;
+  else if (typeof p.avatarDataUrl === 'string') nextPrefs.avatar = p.avatarDataUrl;
   const row = await one<Row>(trx, sql<Row>`
-    update user_profile set display_name = ${next.display_name}, default_free_days = ${next.default_free_days}, exit_days_limit = ${next.exit_days_limit}
+    update user_profile
+    set display_name = ${next.display_name}, default_free_days = ${next.default_free_days}, exit_days_limit = ${next.exit_days_limit},
+        preferences = ${JSON.stringify(nextPrefs)}::jsonb
     where id = ${userId} returning *`);
   if (!row) throw new AppError(500, 'INTERNAL_ERROR', 'Update failed');
   return mapProfile(row);
