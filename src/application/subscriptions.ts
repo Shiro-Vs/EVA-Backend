@@ -201,6 +201,9 @@ export async function getSubscription(ctx: Ctx, id: string) {
 }
 
 export async function listSubscriptions(ctx: Ctx, status?: string) {
+  // Se bloquean las filas en orden de ID, el mismo que usa syncAllSubscriptions: si el listado las tomara en orden alfabético,
+  // una petición simultánea de /summary produciría un interbloqueo (40P01 → 409).
+  await sql`select id from subscription where owner_id = ${ctx.ownerId} and ${status ? sql`status = ${status}` : sql`status <> 'archived'`} order by id for update`.execute(ctx.trx);
   const ids = await rows<{ id: string }>(ctx.trx, status
     ? sql<{ id: string }>`select id from subscription where owner_id = ${ctx.ownerId} and status = ${status} order by lower(name)`
     : sql<{ id: string }>`select id from subscription where owner_id = ${ctx.ownerId} and status <> 'archived' order by lower(name)`);
@@ -228,14 +231,58 @@ export async function patchSubscription(ctx: Ctx, id: string, version: number, p
   return getSubscription(ctx, id);
 }
 
-/** D-32: un servicio con plazas activas de terceros no se archiva. */
+/** D-32: un servicio con plazas activas de terceros o reservas de crédito activas no se archiva. */
 export async function archiveSubscription(ctx: Ctx, id: string) {
   await ensureSubscription(ctx, id);
   const n = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
     select count(*) as n from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id
     where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${id} and (s.end_date is null or s.end_date > ${formatISO(ctx.today)}::date) and not m.is_owner`);
   if (Number(n!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_ACTIVE_SEATS', 'The subscription still has active seats; remove them first');
+  const res = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id} and status = 'active'`);
+  if (Number(res!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_RESERVATIONS', 'Hay crédito reservado para este servicio: muévelo a otro servicio o libéralo antes de archivar');
   await sql`update subscription set status = 'archived' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.archive', entityType: 'subscription', entityId: id });
   return getSubscription(ctx, id);
+}
+
+/** Restaura un servicio archivado a activo. (Un servicio suspendido se reactiva mediante cambio de calendario). */
+export async function restoreSubscription(ctx: Ctx, id: string) {
+  const s = await one<{ id: string; status: string }>(ctx.trx, sql<{ id: string; status: string }>`select id, status from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  if (!s) throw notFound('Subscription');
+  if (s.status !== 'archived') throw unprocessable('SUBSCRIPTION_NOT_ARCHIVED', 'Solo un servicio archivado se puede restaurar');
+  await sql`update subscription set status = 'active' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.restore', entityType: 'subscription', entityId: id });
+  return getSubscription(ctx, id);
+}
+
+/** Elimina definitivamente un servicio SOLO si nunca tuvo pagos al proveedor, cargos, participantes ni historial. Si ya se usó, sugiere archivarlo. */
+export async function deleteSubscription(ctx: Ctx, id: string) {
+  const s = await one<{ id: string; name: string }>(ctx.trx, sql<{ id: string; name: string }>`select id, name from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  if (!s) throw notFound('Subscription');
+  const usage: Record<string, number> = {};
+  const add = (label: string, n: string | undefined) => { if (Number(n ?? 0) > 0) usage[label] = Number(n); };
+  add('pagos al proveedor', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from supplier_payment sp join billing_cycle bc on bc.id = sp.cycle_id and bc.owner_id = sp.owner_id
+    where sp.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`))?.n);
+  add('cargos emitidos', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from member_charge mc join billing_cycle bc on bc.id = mc.cycle_id and bc.owner_id = mc.owner_id
+    where mc.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`))?.n);
+  add('participantes', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from membership where owner_id = ${ctx.ownerId} and subscription_id = ${id} and not is_owner`))?.n);
+  add('reservas de crédito', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id}`))?.n);
+  add('cambios de calendario', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from calendar_change where owner_id = ${ctx.ownerId} and subscription_id = ${id}`))?.n);
+  if (Object.keys(usage).length > 0) {
+    throw conflict('SUBSCRIPTION_IN_USE', 'El servicio ya tiene historial o participantes: no se puede eliminar sin romperlo. Puedes archivarlo', { usage });
+  }
+  await sql`delete from seat_terms where owner_id = ${ctx.ownerId} and seat_id in (select id from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id})`.execute(ctx.trx);
+  await sql`delete from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
+  await sql`delete from membership where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
+  await sql`delete from billing_cycle where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
+  await sql`delete from subscription_terms where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
+  await sql`delete from subscription where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.delete', entityType: 'subscription', entityId: id, changes: { name: s.name } });
+  return { id, deleted: true };
 }

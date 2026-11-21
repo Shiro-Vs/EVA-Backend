@@ -78,6 +78,14 @@ export function subscriptionRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => subs.archiveSubscription(ctx, id));
   });
+  app.post('/subscriptions/:id/restore', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => subs.restoreSubscription(ctx, id));
+  });
+  app.post('/subscriptions/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => subs.deleteSubscription(ctx, id));
+  });
   app.get('/subscriptions/:id/cycles', async (req) => {
     const { id } = parse(idParam, req.params);
     return { items: await withCtx(deps, req, (ctx) => subs.listCycles(ctx, id)) };

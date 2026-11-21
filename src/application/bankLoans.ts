@@ -39,7 +39,7 @@ export async function createBankLoan(ctx: Ctx, i: BankLoanInput) {
 
 export async function patchBankLoan(ctx: Ctx, id: string, version: number, p: { name?: string; entity?: string | null; accountId?: string | null; note?: string | null; status?: 'active' | 'closed' }) {
   const l = await loadLoan(ctx, id, true);
-  if (l.version !== version) throw conflict('VERSION_CONFLICT', 'El préstamo cambió; recárgalo');
+  if (l.version !== version) throw conflict('CONFLICT_VERSION', 'El préstamo cambió; recárgalo');
   if (p.accountId) await requireOwned(ctx, 'account', p.accountId);
   const has = (k: keyof typeof p) => k in p;
   await sql`
@@ -47,6 +47,21 @@ export async function patchBankLoan(ctx: Ctx, id: string, version: number, p: { 
       note = ${has('note') ? p.note?.trim() || null : l.note}, status = ${p.status ?? l.status} where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'bank_loan.update', entityType: 'bank_loan', entityId: id });
   return getBankLoan(ctx, id);
+}
+
+/** Elimina un préstamo bancario SOLO si no tiene pagos registrados (activos o revertidos). */
+export async function deleteBankLoan(ctx: Ctx, id: string) {
+  const l = await loadLoan(ctx, id, true);
+  const pays = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from bank_loan_payment where owner_id = ${ctx.ownerId} and loan_id = ${id}`);
+  if (Number(pays?.n ?? 0) > 0) {
+    throw conflict('BANK_LOAN_IN_USE', 'Este préstamo ya tiene pagos registrados: no se puede eliminar. Puedes marcarlo como cerrado', { usage: { pagos: Number(pays!.n) } });
+  }
+  await sql`delete from bank_loan_installment where owner_id = ${ctx.ownerId} and loan_id = ${id}`.execute(ctx.trx);
+  await sql`delete from bank_loan_fact where owner_id = ${ctx.ownerId} and loan_id = ${id}`.execute(ctx.trx);
+  await sql`delete from bank_loan_document where owner_id = ${ctx.ownerId} and loan_id = ${id}`.execute(ctx.trx);
+  await sql`delete from bank_loan where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'bank_loan.delete', entityType: 'bank_loan', entityId: id, changes: { name: l.name } });
+  return { id, deleted: true };
 }
 
 // ───────────────────────── Datos, cuotas y calendario ─────────────────────────

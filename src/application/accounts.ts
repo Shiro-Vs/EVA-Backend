@@ -89,6 +89,7 @@ export interface PatchAccountInput { name?: string; color?: string | null; icon?
 
 export async function patchAccount(ctx: Ctx, id: string, version: number, p: PatchAccountInput) {
   const cur = await getAccountRow(ctx, id, true);
+  if (cur.status !== 'active') throw unprocessable('ACCOUNT_ARCHIVED', 'La cuenta está archivada');
   if (cur.version !== version) throw conflict('CONFLICT_VERSION', 'The account was modified; reload and retry');
   if (p.isDefault) await sql`update account set is_default = false where owner_id = ${ctx.ownerId} and is_default and id <> ${id}`.execute(ctx.trx);
   await sql`
@@ -105,6 +106,46 @@ export async function archiveAccount(ctx: Ctx, id: string) {
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'account.archive', entityType: 'account', entityId: id });
   const warnings = parseMoney(cur.balance, { allowNegative: true }) !== 0n ? ['ACCOUNT_HAS_BALANCE'] : [];
   return { account: await getAccount(ctx, id), warnings };
+}
+
+export async function restoreAccount(ctx: Ctx, id: string) {
+  await getAccountRow(ctx, id, true);
+  await sql`update account set status = 'active' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'account.restore', entityType: 'account', entityId: id });
+  return getAccount(ctx, id);
+}
+
+const ACCOUNT_USAGE: Array<[string, string, string]> = [
+  ['account_entry', 'account_id', 'movimientos'],
+  ['subscription', 'preferred_account_id', 'servicios'],
+  ['classification_rule', 'account_id', 'reglas'],
+  ['card_statement', 'account_id', 'estados de cuenta'],
+  ['card_installment_plan', 'account_id', 'compras en cuotas'],
+  ['goal_contribution', 'account_id', 'reservas de metas'],
+  ['recurring_template', 'account_id', 'recurrentes'],
+  ['reconciliation', 'account_id', 'conciliaciones'],
+  ['movement_proposal', 'account_id', 'propuestas de captura'],
+  ['movement_proposal', 'to_account_id', 'propuestas de captura'],
+  ['sender_rule', 'account_id', 'reglas por remitente'],
+  ['bank_loan', 'account_id', 'préstamos bancarios'],
+  ['payment_channel', 'linked_account_id', 'canales de pago'],
+];
+
+/** Elimina una cuenta SOLO si no tiene movimientos ni configuración vinculada. Si tiene uso, sugiere archivarla. */
+export async function deleteAccount(ctx: Ctx, id: string) {
+  const cur = await getAccountRow(ctx, id, true);
+  const usage: Record<string, number> = {};
+  for (const [table, col, label] of ACCOUNT_USAGE) {
+    const r = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from ${sql.table(table)} where owner_id = ${ctx.ownerId} and ${sql.ref(col)} = ${id}`);
+    if (Number(r?.n ?? 0) > 0) usage[label] = (usage[label] ?? 0) + Number(r!.n);
+  }
+  if (Object.keys(usage).length > 0) {
+    throw conflict('ACCOUNT_IN_USE', 'La cuenta tiene movimientos o configuración vinculada: no se puede eliminar. Puedes archivarla', { usage });
+  }
+  await sql`delete from credit_account_details where owner_id = ${ctx.ownerId} and account_id = ${id}`.execute(ctx.trx);
+  await sql`delete from account where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'account.delete', entityType: 'account', entityId: id, changes: { name: cur.name } });
+  return { id, deleted: true };
 }
 
 export async function listEntries(ctx: Ctx, accountId: string, limit: number, offset: number) {

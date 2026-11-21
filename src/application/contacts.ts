@@ -81,3 +81,41 @@ export async function archiveContact(ctx: Ctx, id: string) {
   const warnings = parseMoney(c.totals.pending) > 0n ? ['CONTACT_HAS_PENDING_DEBT'] : [];
   return { contact: await getContact(ctx, id), warnings };
 }
+
+export async function restoreContact(ctx: Ctx, id: string) {
+  const c = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`select id from contact where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  if (!c) throw notFound('Contact');
+  await sql`update contact set status = 'active' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'contact.restore', entityType: 'contact', entityId: id });
+  return getContact(ctx, id);
+}
+
+const CONTACT_USAGE: Array<[string, string]> = [
+  ['membership', 'servicios'],
+  ['receivable_obligation', 'cargos'],
+  ['receipt', 'cobros'],
+  ['refund', 'devoluciones'],
+  ['loan', 'préstamos'],
+  ['debt_conversion', 'conversiones de deuda'],
+  ['financial_operation', 'movimientos'],
+  ['recurring_template', 'recurrentes'],
+  ['movement_proposal', 'propuestas de captura'],
+  ['sender_rule', 'reglas por remitente'],
+];
+
+/** Elimina un contacto SOLO si no tiene historial ni registros vinculados. Si tiene uso, sugiere archivarlo. */
+export async function deleteContact(ctx: Ctx, id: string) {
+  const cur = await one<{ id: string; name: string }>(ctx.trx, sql<{ id: string; name: string }>`select id, name from contact where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  if (!cur) throw notFound('Contact');
+  const usage: Record<string, number> = {};
+  for (const [table, label] of CONTACT_USAGE) {
+    const r = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from ${sql.table(table)} where owner_id = ${ctx.ownerId} and contact_id = ${id}`);
+    if (Number(r?.n ?? 0) > 0) usage[label] = Number(r!.n);
+  }
+  if (Object.keys(usage).length > 0) {
+    throw conflict('CONTACT_IN_USE', 'El contacto ya tiene historial o servicios vinculados: no se puede eliminar. Puedes archivarlo', { usage });
+  }
+  await sql`delete from contact where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'contact.delete', entityType: 'contact', entityId: id, changes: { name: cur.name } });
+  return { id, deleted: true };
+}

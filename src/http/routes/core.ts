@@ -59,6 +59,14 @@ export function coreRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => accounts.archiveAccount(ctx, id));
   });
+  app.post('/accounts/:id/restore', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => accounts.restoreAccount(ctx, id));
+  });
+  app.post('/accounts/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => accounts.deleteAccount(ctx, id));
+  });
   app.get('/accounts/:id/entries', async (req) => {
     const { id } = parse(idParam, req.params);
     const q = parse(s.listQuery, req.query);
@@ -128,5 +136,13 @@ export function coreRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.post('/contacts/:id/archive', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => contacts.archiveContact(ctx, id));
+  });
+  app.post('/contacts/:id/restore', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => contacts.restoreContact(ctx, id));
+  });
+  app.post('/contacts/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => contacts.deleteContact(ctx, id));
   });
 }

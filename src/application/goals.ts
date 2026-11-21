@@ -101,6 +101,18 @@ export async function setGoalStatus(ctx: Ctx, id: string, status: 'active' | 'ar
   return getGoal(ctx, id);
 }
 
+/** Elimina una meta SOLO si nunca tuvo reservas ni transferencias vinculadas. Si ya se usó, sugiere archivarla. */
+export async function deleteGoal(ctx: Ctx, id: string) {
+  const g = await load(ctx, id, true);
+  const c = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from goal_contribution where owner_id = ${ctx.ownerId} and goal_id = ${id}`);
+  if (Number(c?.n ?? 0) > 0) {
+    throw conflict('GOAL_IN_USE', 'La meta ya tiene historial de reservas: no se puede eliminar. Puedes archivarla', { usage: { aportes: Number(c!.n) } });
+  }
+  await sql`delete from goal where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'goal.delete', entityType: 'goal', entityId: id, changes: { name: g.name } });
+  return { id, deleted: true };
+}
+
 async function savingsAccount(ctx: Ctx, accountId: string) {
   const a = await one<{ type: string; status: string; name: string }>(ctx.trx, sql<{ type: string; status: string; name: string }>`select type, status, name from account where owner_id = ${ctx.ownerId} and id = ${accountId} for share`);
   if (!a) throw notFound('Account');

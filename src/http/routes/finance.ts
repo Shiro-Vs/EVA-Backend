@@ -117,6 +117,10 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => goals.setGoalStatus(ctx, id, 'active'));
   });
+  app.post('/goals/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => goals.deleteGoal(ctx, id));
+  });
   app.post('/goals/:id/reserve', async (req, reply) => {
     const { id } = parse(idParam, req.params);
     const body = parse(s.goalMoney, req.body);
@@ -166,6 +170,10 @@ export function financeRoutes(app: FastifyInstance, deps: HttpDeps) {
   app.post('/budgets/:id/restore', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => budgets.setBudgetStatus(ctx, id, 'active'));
+  });
+  app.post('/budgets/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => budgets.deleteBudget(ctx, id));
   });
 
   // ---------- Préstamos (libro de cargos) ----------

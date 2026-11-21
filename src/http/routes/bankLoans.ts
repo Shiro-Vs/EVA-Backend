@@ -29,6 +29,10 @@ export function bankLoanRoutes(app: FastifyInstance, deps: HttpDeps) {
     const l = await withCtx(deps, req, (ctx) => bank.patchBankLoan(ctx, id, version, b));
     return reply.header('ETag', `"${l.version}"`).send(l);
   });
+  app.post('/bank-loans/:id/delete', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => bank.deleteBankLoan(ctx, id));
+  });
   app.post('/bank-loans/:id/changes/preview', async (req) => {
     const { id } = parse(idParam, req.params);
     const b = parse(s.bankLoanChange, req.body);

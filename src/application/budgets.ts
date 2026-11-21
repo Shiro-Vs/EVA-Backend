@@ -247,6 +247,16 @@ export async function setBudgetStatus(ctx: Ctx, id: string, status: 'active' | '
   return getBudget(ctx, id);
 }
 
+/** Elimina un presupuesto (es una regla de aviso: no borra movimientos reales). */
+export async function deleteBudget(ctx: Ctx, id: string) {
+  const b = await load(ctx, id, true);
+  await sql`delete from budget_threshold where owner_id = ${ctx.ownerId} and budget_id = ${id}`.execute(ctx.trx);
+  await sql`delete from budget_limit where owner_id = ${ctx.ownerId} and budget_id = ${id}`.execute(ctx.trx);
+  await sql`delete from budget where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'budget.delete', entityType: 'budget', entityId: id, changes: { name: b.name } });
+  return { id, deleted: true };
+}
+
 /** Presupuestos que un gasto toca y cómo quedan (avisos que NO bloquean): se devuelve al registrar el gasto. */
 export async function impactOf(ctx: Ctx, categoryId: string | null, date: number) {
   const bs = await rows<BudgetRow>(ctx.trx, sql<BudgetRow>`${sel} where b.owner_id = ${ctx.ownerId} and b.status = 'active'`);

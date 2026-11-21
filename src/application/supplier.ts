@@ -50,7 +50,8 @@ export async function registerSupplierPayment(ctx: Ctx, cycleId: string, i: { ac
   await activeAccount(ctx, i.accountId); // en una cuenta de crédito el asiento negativo aumenta la deuda de la tarjeta
 
   // El pago hereda la categoría del servicio: así consume presupuesto (RN-BU06).
-  const svc = await one<{ category_id: string | null }>(ctx.trx, sql<{ category_id: string | null }>`select category_id from subscription where owner_id = ${ctx.ownerId} and id = ${c.subscription_id}`);
+  const svc = await one<{ category_id: string | null; status: string }>(ctx.trx, sql<{ category_id: string | null; status: string }>`select category_id, status from subscription where owner_id = ${ctx.ownerId} and id = ${c.subscription_id}`);
+  if (svc?.status === 'archived') throw unprocessable('SUBSCRIPTION_ARCHIVED', 'El servicio está archivado');
   const opId = await insertOperation(ctx, { kind: 'expense', date: paidOn, description: i.note?.trim() || `Pago de ${c.subscription_name} (${c.start_date} → ${c.end_date})`, source: 'manual', categoryId: svc?.category_id ?? null }, [{ accountId: i.accountId, amount: -amount }]);
   await sql`
     insert into supplier_payment (owner_id, cycle_id, operation_id, amount_real, announced_price_snapshot, paid_on)
