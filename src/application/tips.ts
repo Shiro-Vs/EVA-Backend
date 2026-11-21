@@ -51,6 +51,7 @@ const selectToday = (ctx: Ctx, day: string) => one<TipRow>(ctx.trx, sql<TipRow>`
 /** Consejo de hoy: si ya existe se devuelve; si no, se genera una sola vez por día (consume 1 tarea de IA). */
 export async function todayTip(ctx: Ctx, deps: TipDeps) {
   const day = formatISO(ctx.today);
+  await sql`select pg_advisory_xact_lock(hashtext(${`tip:${ctx.ownerId}:${day}`}))`.execute(ctx.trx);
   const have = await selectToday(ctx, day);
   if (have) return { date: day, tip: view(have) };
   if (deps.analyst.provider === 'none') return none(day, 'AI_UNAVAILABLE');

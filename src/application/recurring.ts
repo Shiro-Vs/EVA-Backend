@@ -61,7 +61,7 @@ function nextAfter(t: TplRow, after: LocalDate): LocalDate | null {
 
 /** Genera de forma idempotente las ocurrencias vencidas (hasta hoy) de las plantillas activas. No registra ningún movimiento. */
 export async function syncRecurring(ctx: Ctx, templateId?: string) {
-  const ts_ = await rows<TplRow>(ctx.trx, sql<TplRow>`${sel} where t.owner_id = ${ctx.ownerId} and t.status = 'active' and (${templateId ?? null}::uuid is null or t.id = ${templateId ?? null}) for update of t`);
+  const ts_ = await rows<TplRow>(ctx.trx, sql<TplRow>`${sel} where t.owner_id = ${ctx.ownerId} and t.status = 'active' and (${templateId ?? null}::uuid is null or t.id = ${templateId ?? null}) order by t.id for update of t`);
   for (const t of ts_) {
     const through = parseISO(t.generated_through);
     let last = through;
