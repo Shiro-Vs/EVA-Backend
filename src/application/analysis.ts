@@ -296,6 +296,18 @@ export async function saveChat(ctx: Ctx, id: string, i: { title?: string; messag
   return sessionView(updated!);
 }
 
+/** Cambia el título de una conversación existente. */
+export async function renameChat(ctx: Ctx, id: string, title: string) {
+  await loadChat(ctx, id, true);
+  const nextTitle = clean(title, 80);
+  if (!nextTitle) throw unprocessable('VALIDATION_ERROR', 'El nombre no puede estar vacío');
+  const updated = await one<SessionRow>(ctx.trx, sql<SessionRow>`
+    update chat_session set title = ${nextTitle}, updated_at = ${new Date(ctx.nowMs).toISOString()}
+    where owner_id = ${ctx.ownerId} and id = ${id} returning id, title, scope, save_history, created_at, updated_at`);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'chat.rename', entityType: 'chat_session', entityId: id });
+  return sessionView(updated!);
+}
+
 /** Borrar el chat elimina sus mensajes de verdad. */
 export async function deleteChat(ctx: Ctx, id: string) {
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`delete from chat_session where owner_id = ${ctx.ownerId} and id = ${id} returning id`);

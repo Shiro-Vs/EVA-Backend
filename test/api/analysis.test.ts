@@ -289,6 +289,10 @@ describe('Chat (07 §9: historial opt-in y borrable)', () => {
     expect(saved.body).toMatchObject({ saveHistory: true, title: 'Primera' });
     expect((await x.get(u.token, '/analysis/chats')).body.items).toHaveLength(1);
     expect((await x.get(u.token, `/analysis/chats/${chat.id}`)).body.messages.map((m: any) => m.content)).toEqual(['Primera', 'Resp']);
+    const renamed = await x.post(u.token, `/analysis/chats/${chat.id}/rename`, { title: 'Gastos de octubre' });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body.title).toBe('Gastos de octubre');
+    expect((await x.get(u.token, `/analysis/chats/${chat.id}`)).body.title).toBe('Gastos de octubre');
     await x.app.close();
   });
 
