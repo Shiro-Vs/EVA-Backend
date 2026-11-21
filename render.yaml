@@ -24,7 +24,11 @@ services:
       - key: AUTH_AUDIENCE
         value: authenticated
       - key: EXTRACTOR
-        value: none
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: PREVIEW_SECRET
