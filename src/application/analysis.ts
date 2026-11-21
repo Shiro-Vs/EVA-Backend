@@ -248,7 +248,7 @@ async function loadChat(ctx: Ctx, id: string, lock = false) {
 }
 
 export async function listChats(ctx: Ctx) {
-  return (await rows<SessionRow>(ctx.trx, sql<SessionRow>`select id, title, scope, save_history, created_at, updated_at from chat_session where owner_id = ${ctx.ownerId} order by updated_at desc, id limit 100`)).map(sessionView);
+  return (await rows<SessionRow>(ctx.trx, sql<SessionRow>`select id, title, scope, save_history, created_at, updated_at from chat_session where owner_id = ${ctx.ownerId} and save_history = true order by updated_at desc, id limit 100`)).map(sessionView);
 }
 
 export async function getChat(ctx: Ctx, id: string) {
@@ -272,8 +272,10 @@ export async function sendMessage(ctx: Ctx, deps: AnalysisDeps, id: string, i: {
   if (s.save_history) {
     await sql`insert into chat_message (owner_id, session_id, role, content, created_at) values (${ctx.ownerId}, ${id}, 'user', ${i.text.trim()}, clock_timestamp())`.execute(ctx.trx);
     await sql`insert into chat_message (owner_id, session_id, role, content, created_at) values (${ctx.ownerId}, ${id}, 'assistant', ${r.answer}, clock_timestamp())`.execute(ctx.trx);
+    await sql`update chat_session set updated_at = ${new Date(ctx.nowMs).toISOString()}, title = case when title = '' then ${clean(i.text, 60)} else title end where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+  } else {
+    await sql`update chat_session set updated_at = ${new Date(ctx.nowMs).toISOString()} where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   }
-  await sql`update chat_session set updated_at = ${new Date(ctx.nowMs).toISOString()}, title = case when title = '' then ${clean(i.text, 60)} else title end where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   return { chatId: id, savedHistory: s.save_history, ...r };
 }
 

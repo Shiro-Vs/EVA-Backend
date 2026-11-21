@@ -360,7 +360,7 @@ export const analysisContext = z.object({ scope: analysisScope }).strict();
 export const chatCreate = z.object({ title: z.string().trim().max(80).optional(), scope: analysisScope, saveHistory: z.boolean().optional() }).strict();
 export const chatMessage = z.object({
   text: question,
-  history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(2000) }).strict()).max(10).optional(),
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(4000) }).strict()).max(10).optional(),
 }).strict();
 
 // ---------- Préstamos bancarios con documentos (Entrega 4, bloque 3) ----------

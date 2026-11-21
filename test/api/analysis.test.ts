@@ -277,6 +277,8 @@ describe('Chat (07 §9: historial opt-in y borrable)', () => {
     expect(r.body.savedHistory).toBe(false);
     expect(a.calls[0]!.history).toHaveLength(2);
     expect((await x.get(u.token, `/analysis/chats/${chat.id}`)).body.messages).toEqual([]);
+    expect((await x.get(u.token, `/analysis/chats/${chat.id}`)).body.title).toBe('');
+    expect((await x.get(u.token, '/analysis/chats')).body.items).toEqual([]);
     const n = await pool.query('select count(*)::int as n from chat_message where session_id = $1', [chat.id]);
     expect(n.rows[0].n).toBe(0);
     await x.app.close();
