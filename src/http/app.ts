@@ -14,6 +14,8 @@ import { createResendMailer, type Mailer } from '../infra/mail.js';
 import { createResendInbox, type InboundInbox } from '../infra/resend-inbound.js';
 import { bearer, type HttpDeps } from './context.js';
 import { AppError, fromDatabase } from './errors.js';
+import { DateError } from '../domain/localDate.js';
+import { MoneyError } from '../domain/money.js';
 import { billingRoutes } from './routes/billing.js';
 import { analysisRoutes } from './routes/analysis.js';
 import { tipRoutes } from './routes/tips.js';
@@ -75,7 +77,7 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
     const origin = req.headers.origin;
     if (!origin || !origins.has(origin)) return;
     reply.header('Access-Control-Allow-Origin', origin).header('Vary', 'Origin')
-      .header('Access-Control-Expose-Headers', 'ETag, Idempotency-Replayed, X-Request-Id');
+      .header('Access-Control-Expose-Headers', 'ETag, Idempotency-Replayed, X-Request-Id, Content-Disposition');
     if (req.method === 'OPTIONS') {
       return reply.status(204)
         .header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
@@ -87,7 +89,11 @@ export function buildApp({ pool, env, now = () => new Date(), authenticator, log
 
   // Formato de error uniforme (13 §3). No se filtran detalles internos.
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, req, reply) => {
-    const mapped = err instanceof AppError ? err : fromDatabase(err);
+    const mapped = err instanceof AppError
+      ? err
+      : (err instanceof DateError || err instanceof MoneyError)
+        ? new AppError(422, 'VALIDATION_ERROR', err.message)
+        : fromDatabase(err);
     if (mapped) {
       return reply.status(mapped.status).send({ error: { code: mapped.code, message: mapped.message, ...(mapped.details ? { details: mapped.details } : {}), requestId: req.id } });
     }
