@@ -37,6 +37,11 @@ export function analysisRoutes(app: FastifyInstance, deps: HttpDeps) {
     const b = parse(s.chatMessage, req.body);
     return withCtx(deps, req, (ctx) => analysis.sendMessage(ctx, ad(), id, b));
   });
+  app.post('/analysis/chats/:id/save', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const b = parse(s.chatSave, req.body ?? {});
+    return withCtx(deps, req, (ctx) => analysis.saveChat(ctx, id, b));
+  });
   app.post('/analysis/chats/:id/delete', async (req) => {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => analysis.deleteChat(ctx, id));

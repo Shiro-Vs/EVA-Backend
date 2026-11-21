@@ -279,6 +279,23 @@ export async function sendMessage(ctx: Ctx, deps: AnalysisDeps, id: string, i: {
   return { chatId: id, savedHistory: s.save_history, ...r };
 }
 
+/** Guarda una conversación iniciada sin historial: persiste los turnos recibidos y activa save_history. */
+export async function saveChat(ctx: Ctx, id: string, i: { title?: string; messages?: Turn[] }) {
+  const s = await loadChat(ctx, id, true);
+  if (s.save_history) return sessionView(s);
+  const turns = i.messages ?? [];
+  for (const m of turns) {
+    await sql`insert into chat_message (owner_id, session_id, role, content, created_at) values (${ctx.ownerId}, ${id}, ${m.role}, ${m.content.trim()}, clock_timestamp())`.execute(ctx.trx);
+  }
+  const firstUser = turns.find((m) => m.role === 'user')?.content;
+  const nextTitle = clean(i.title, 80) || s.title || clean(firstUser, 60);
+  const updated = await one<SessionRow>(ctx.trx, sql<SessionRow>`
+    update chat_session set save_history = true, title = ${nextTitle}, updated_at = ${new Date(ctx.nowMs).toISOString()}
+    where owner_id = ${ctx.ownerId} and id = ${id} returning id, title, scope, save_history, created_at, updated_at`);
+  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'chat.save', entityType: 'chat_session', entityId: id });
+  return sessionView(updated!);
+}
+
 /** Borrar el chat elimina sus mensajes de verdad. */
 export async function deleteChat(ctx: Ctx, id: string) {
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`delete from chat_session where owner_id = ${ctx.ownerId} and id = ${id} returning id`);

@@ -363,6 +363,10 @@ export const chatMessage = z.object({
   text: question,
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(4000) }).strict()).max(10).optional(),
 }).strict();
+export const chatSave = z.object({
+  title: z.string().trim().max(80).optional(),
+  messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(4000) }).strict()).max(100).optional(),
+}).strict();
 
 // ---------- Préstamos bancarios con documentos (Entrega 4, bloque 3) ----------
 const loanFactKey = z.enum(['principal', 'tea', 'tcea', 'term_months', 'installments_count', 'disbursed_on', 'first_due_date', 'monthly_payment', 'outstanding_balance', 'loan_number']);

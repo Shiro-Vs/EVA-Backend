@@ -281,6 +281,14 @@ describe('Chat (07 §9: historial opt-in y borrable)', () => {
     expect((await x.get(u.token, '/analysis/chats')).body.items).toEqual([]);
     const n = await pool.query('select count(*)::int as n from chat_message where session_id = $1', [chat.id]);
     expect(n.rows[0].n).toBe(0);
+    // Se puede guardar después de haber empezado
+    const saved = await x.post(u.token, `/analysis/chats/${chat.id}/save`, {
+      messages: [{ role: 'user', content: 'Primera' }, { role: 'assistant', content: 'Resp' }],
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body).toMatchObject({ saveHistory: true, title: 'Primera' });
+    expect((await x.get(u.token, '/analysis/chats')).body.items).toHaveLength(1);
+    expect((await x.get(u.token, `/analysis/chats/${chat.id}`)).body.messages.map((m: any) => m.content)).toEqual(['Primera', 'Resp']);
     await x.app.close();
   });
 

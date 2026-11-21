@@ -156,6 +156,7 @@ export const ROUTES: Doc[] = [
   D('get', '/analysis/chats', 'Análisis', 'Chats del usuario'),
   D('get', '/analysis/chats/{id}', 'Análisis', 'Chat con sus mensajes (si guarda historial)'),
   D('post', '/analysis/chats/{id}/messages', 'Análisis', 'Envía un mensaje; sin historial guardado el cliente reenvía los turnos que quiera conservar', { body: s.chatMessage }),
+  D('post', '/analysis/chats/{id}/save', 'Análisis', 'Guarda una conversación ya iniciada (persiste sus mensajes en tu cuenta hasta que la borres)', { body: s.chatSave }),
   D('post', '/analysis/chats/{id}/delete', 'Análisis', 'Borra el chat y sus mensajes'),
 
   D('post', '/bank-loans', 'Préstamos bancarios', 'Crea un préstamo bancario: solo guarda datos confirmados por documento o por ti', { body: s.bankLoanCreate, status: 201 }),

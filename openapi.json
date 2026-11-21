@@ -147,6 +147,18 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "avatarDataUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500000,
+                        "pattern": "^data:image\\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -10645,7 +10657,7 @@
                         "content": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 2000
+                          "maxLength": 4000
                         }
                       },
                       "required": [
@@ -10659,6 +10671,108 @@
                 "required": [
                   "text"
                 ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analysis/chats/{id}/save": {
+      "post": {
+        "tags": [
+          "Análisis"
+        ],
+        "summary": "Guarda una conversación ya iniciada (persiste sus mensajes en tu cuenta hasta que la borres)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "messages": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
                 "additionalProperties": false
               }
             }
