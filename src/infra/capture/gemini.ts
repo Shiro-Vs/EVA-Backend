@@ -45,8 +45,8 @@ export function createGeminiExtractor(o: GeminiOptions): Extractor {
       }
       if (res.status === 429) throw new ExtractorError('EXTRACTOR_RATE_LIMIT', 'El modelo de IA alcanzó su límite; reintenta más tarde', true);
       if (!res.ok) throw new ExtractorError('EXTRACTOR_ERROR', `El modelo de IA respondió ${res.status}`, res.status >= 500);
-      const body = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-      const text = body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+      const body = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      const text = (body.candidates?.[0]?.content?.parts ?? []).filter((p) => !p.thought).map((p) => p.text ?? '').join('');
       let raw: unknown;
       try { raw = JSON.parse(text); } catch { throw new ExtractorError('EXTRACTION_INVALID', 'El modelo no devolvió un JSON válido', true); }
       // La tarifa no está fijada hoy (07 §6.8): el costo estimado queda en 0 hasta configurarla.
