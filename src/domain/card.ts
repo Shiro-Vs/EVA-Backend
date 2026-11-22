@@ -13,6 +13,15 @@ export function nextCutoff(date: LocalDate, cutoffDay: number): LocalDate {
   return clamp(n.y, n.m, cutoffDay);
 }
 
+/** Próxima fecha límite de pago en o después de `date` (días 29–31 se ajustan al último día del mes). */
+export function nextDueDate(date: LocalDate, dueDay: number): LocalDate {
+  const { y, m } = toYMD(date);
+  const same = clamp(y, m, dueDay);
+  if (same >= date) return same;
+  const n = nextMonth(y, m);
+  return clamp(n.y, n.m, dueDay);
+}
+
 /** Fecha límite de pago de un corte: el primer día `dueDay` estrictamente posterior al corte (corte ≠ pago). */
 export function dueAfter(cutoff: LocalDate, dueDay: number): LocalDate {
   const { y, m } = toYMD(cutoff);

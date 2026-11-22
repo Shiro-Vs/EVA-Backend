@@ -16,6 +16,7 @@ const dashboard = z.object({
 
 const leadKind = z.object({ enabled: z.boolean(), leadDays: z.array(z.number().int().min(0).max(30)).max(5).refine((d) => new Set(d).size === d.length, 'Anticipaciones repetidas') }).strict();
 const flagKind = z.object({ enabled: z.boolean() }).strict();
+const DEFAULT_CARD_LEAD = { enabled: true, leadDays: [3, 1, 0] };
 const notifications = z.object({
   enabled: z.boolean(),
   /** Texto discreto por defecto: sin importes ni nombres hasta que se habilite el detalle (09 §7). */
@@ -23,7 +24,15 @@ const notifications = z.object({
   time: hhmm,
   quiet: z.object({ from: hhmm, to: hhmm }).strict().nullable(),
   repeatOverdue: z.boolean(),
-  kinds: z.object({ renewal: leadKind, collection: leadKind, recurring: leadKind, loan: leadKind, budget: flagKind, capture: flagKind }).strict(),
+  kinds: z.object({
+    renewal: leadKind,
+    collection: leadKind,
+    recurring: leadKind,
+    loan: leadKind,
+    card: leadKind.optional().default(DEFAULT_CARD_LEAD),
+    budget: flagKind,
+    capture: flagKind,
+  }).strict(),
 }).strict();
 
 const capture = z.object({ reviewMode: z.enum(['individual', 'batch']), duplicates: z.enum(['separate', 'grouped']) }).strict();
@@ -40,7 +49,7 @@ export const DEFAULTS: Preferences = {
   dashboard: { cards: CARD_IDS.map((id) => ({ id, enabled: DEFAULT_CARDS.includes(id) })) },
   notifications: {
     enabled: true, discreet: true, time: '09:00', quiet: { from: '22:00', to: '07:00' }, repeatOverdue: false,
-    kinds: { renewal: { enabled: true, leadDays: [3, 1, 0] }, collection: { enabled: true, leadDays: [1, 0] }, recurring: { enabled: true, leadDays: [1, 0] }, loan: { enabled: true, leadDays: [3, 1, 0] }, budget: { enabled: true }, capture: { enabled: true } },
+    kinds: { renewal: { enabled: true, leadDays: [3, 1, 0] }, collection: { enabled: true, leadDays: [1, 0] }, recurring: { enabled: true, leadDays: [1, 0] }, loan: { enabled: true, leadDays: [3, 1, 0] }, card: { enabled: true, leadDays: [3, 1, 0] }, budget: { enabled: true }, capture: { enabled: true } },
   },
   capture: { reviewMode: 'individual', duplicates: 'separate' },
   security: { lockAfterSeconds: 60 },

@@ -55,6 +55,17 @@ describe('Preferencias (RN-PA01, 09 §7, RN-SE02)', () => {
     expect(p.security).toEqual({ lockAfterSeconds: 60 });
     expect(p.capture.reviewMode).toBe('batch');
     expect(completeCards([{ id: 'goals', enabled: true }]).map((c) => c.id)).toEqual(['goals', ...CARD_IDS.filter((x) => x !== 'goals')]);
+
+    // Compatibilidad hacia atrás: preferencias guardadas antes de existir `kinds.card` no pierden sus ajustes.
+    const legacy = resolvePreferences({
+      notifications: {
+        enabled: true, discreet: false, time: '08:30', quiet: null, repeatOverdue: true,
+        kinds: { renewal: { enabled: false, leadDays: [1] }, collection: { enabled: true, leadDays: [0] }, recurring: { enabled: true, leadDays: [1] }, loan: { enabled: true, leadDays: [3] }, budget: { enabled: true }, capture: { enabled: false } },
+      },
+    });
+    expect(legacy.notifications.time).toBe('08:30');
+    expect(legacy.notifications.discreet).toBe(false);
+    expect(legacy.notifications.kinds.card).toEqual({ enabled: true, leadDays: [3, 1, 0] });
   });
 });
 
@@ -181,5 +192,56 @@ describe('Avisos: qué avisar y cuándo (09 §7)', () => {
     const up = (await a.get(u.token, '/dashboard')).body.cards.find((c: any) => c.id === 'upcoming_payments').data.items;
     expect(up.map((i: any) => i.type).sort()).toEqual(['bank_loan', 'recurring']);
     await a.app.close();
+  });
+
+  it('tarjetas de crédito con fecha de pago y deuda (o estado de cuenta) generan avisos y próximos pagos sin duplicar', async () => {
+    at('2026-10-11', '14:00'); // 09:00 en Lima; faltan 4 días para el 15
+    const u = await api.newUser();
+    const bcp = await createAccount(api, u.token, 'BCP', '500.00', 'bank', '2026-10-01');
+    const visa = await createAccount(api, u.token, 'Visa BCP', '0.00', 'credit', '2026-10-01');
+    await api.post(u.token, `/accounts/${visa.id}/credit-details`, { creditLine: '2000.00', cutoffDay: 25, dueDay: 15 });
+
+    // Sin deuda no genera alertas.
+    expect((await api.get(u.token, '/reminders')).body.items).toEqual([]);
+
+    // Con gasto de S/ 100.00, aparece en próximos pagos y en avisos (3, 1 y 0 días antes del 15).
+    await api.post(u.token, '/operations', { kind: 'expense', accountId: visa.id, amount: '100.00', date: '2026-10-10', description: 'Supermercado' });
+    const up1 = (await api.get(u.token, '/dashboard')).body.cards.find((c: any) => c.id === 'upcoming_payments').data.items;
+    expect(up1).toEqual([expect.objectContaining({ type: 'card_debt', id: visa.id, name: 'Pago tarjeta Visa BCP', dueDate: '2026-10-15', amount: '100.00' })]);
+
+    const rDiscreet = (await api.get(u.token, '/reminders')).body.items;
+    expect(rDiscreet).toEqual([expect.objectContaining({
+      kind: 'card', dueDate: '2026-10-15', title: 'Tienes un pago de tarjeta próximo', detail: null,
+      route: `/account/${visa.id}/card`, fireAt: ['2026-10-12T09:00', '2026-10-14T09:00', '2026-10-15T09:00'],
+    })]);
+
+    // Al activar el detalle, incluye el nombre de la tarjeta y el monto.
+    const base = resolvePreferences({}).notifications;
+    await put(u.token, { notifications: { ...base, discreet: false } });
+    const rDetail = (await api.get(u.token, '/reminders')).body.items[0];
+    expect(rDetail.detail).toBe('Pago tarjeta Visa BCP (100.00)');
+
+    // Si registra un estado de cuenta para ese vencimiento, reemplaza el aviso genérico (no duplica).
+    const st = (await api.post(u.token, `/accounts/${visa.id}/statements`, {
+      cutoffDate: '2026-09-25', dueDate: '2026-10-15', periodTotal: '80.00', minimumPayment: '20.00',
+    })).body;
+    const up2 = (await api.get(u.token, '/dashboard')).body.cards.find((c: any) => c.id === 'upcoming_payments').data.items;
+    expect(up2).toEqual([expect.objectContaining({ type: 'card_statement', id: st.id, dueDate: '2026-10-15', amount: '80.00' })]);
+    const rStmt = (await api.get(u.token, '/reminders')).body.items;
+    expect(rStmt).toHaveLength(1);
+    expect(rStmt[0]).toMatchObject({ kind: 'card', route: `/card-statement/${st.id}`, detail: 'Pago tarjeta Visa BCP (80.00)' });
+
+    // Si paga ese estado de cuenta en su totalidad, ya no alerta para el 15 aunque quede S/ 20 de deuda del siguiente ciclo.
+    const pay = (await api.post(u.token, '/operations', { kind: 'transfer', accountId: bcp.id, toAccountId: visa.id, amount: '80.00', date: '2026-10-11' })).body;
+    await api.post(u.token, `/card-statements/${st.id}/payments`, { operationId: pay.id });
+    expect((await api.get(u.token, '/dashboard')).body.cards.find((c: any) => c.id === 'upcoming_payments').data.items).toEqual([]);
+    expect((await api.get(u.token, '/reminders')).body.items).toEqual([]);
+
+    // Se puede apagar solo los avisos de tarjeta.
+    const other = await createAccount(api, u.token, 'Interbank', '-50.00', 'credit', '2026-10-01');
+    await api.post(u.token, `/accounts/${other.id}/credit-details`, { cutoffDay: 20, dueDay: 14 });
+    expect((await api.get(u.token, '/reminders')).body.items).toHaveLength(1);
+    await put(u.token, { notifications: { ...base, kinds: { ...base.kinds, card: { enabled: false, leadDays: [1] } } } });
+    expect((await api.get(u.token, '/reminders')).body.items).toEqual([]);
   });
 });

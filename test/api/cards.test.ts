@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cardWindow } from '../../src/domain/card.js';
-import { parseISO } from '../../src/domain/localDate.js';
+import { cardWindow, nextDueDate } from '../../src/domain/card.js';
+import { formatISO, parseISO } from '../../src/domain/localDate.js';
 import { makeApi } from '../helpers/api.js';
 import { pool } from '../helpers/db.js';
 import { createAccount } from '../helpers/scenarios.js';
@@ -151,5 +151,11 @@ describe('Asesor de tarjeta (RN-T06)', () => {
     expect(w).toMatchObject({ daysToCutoff: 18, daysToPay: 23 }); // corte 28-feb, pago 5-mar
     const y = cardWindow(parseISO('2026-12-31'), 31, 15);
     expect(y.daysToPay).toBe(15); // corte 31-dic, pago 15-ene
+    // Próxima fecha límite de pago para deuda vigente: mismo día, mismo mes, mes siguiente y ajuste fin de mes.
+    expect(formatISO(nextDueDate(parseISO('2026-10-14'), 15))).toBe('2026-10-15');
+    expect(formatISO(nextDueDate(parseISO('2026-10-15'), 15))).toBe('2026-10-15');
+    expect(formatISO(nextDueDate(parseISO('2026-10-16'), 15))).toBe('2026-11-15');
+    expect(formatISO(nextDueDate(parseISO('2026-02-20'), 31))).toBe('2026-02-28');
+    expect(formatISO(nextDueDate(parseISO('2026-12-20'), 5))).toBe('2027-01-05');
   });
 });

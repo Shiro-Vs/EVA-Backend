@@ -1,4 +1,5 @@
 import { sql } from 'kysely';
+import { nextDueDate } from '../domain/card.js';
 import { addDays, formatISO, parseISO } from '../domain/localDate.js';
 import { formatMoney, parseMoney } from '../domain/money.js';
 import { completeCards, resolvePreferences, type CardId, type Preferences, type PreferencesPatch } from '../domain/preferences.js';
@@ -60,6 +61,86 @@ async function recurringDue(ctx: Ctx, days: number) {
     where o.owner_id = ${ctx.ownerId} and o.status = 'pending' and o.due_date <= ${until}::date order by o.due_date, t.name limit 50`);
 }
 
+interface CardPaymentDue {
+  type: 'card_statement' | 'card_debt';
+  id: string;
+  accountId: string;
+  name: string;
+  dueDate: string;
+  amount: string;
+}
+
+/**
+ * Pagos próximos de tarjetas de crédito dentro del horizonte:
+ * 1) Estados de cuenta activos con saldo pendiente (incluye vencidos).
+ * 2) Tarjetas configuradas con deuda actual > 0 cuyo próximo día de pago cae dentro del horizonte
+ *    (solo si no tienen ya un estado de cuenta pendiente ni uno ya pagado para esa misma fecha).
+ */
+async function cardPaymentsDue(ctx: Ctx, days: number): Promise<CardPaymentDue[]> {
+  const untilDate = addDays(ctx.today, days);
+  const until = formatISO(untilDate);
+
+  const stmts = await rows<{ id: string; account_id: string; account_name: string; due_date: string; remaining: string }>(ctx.trx, sql`
+    select s.id, s.account_id, a.name as account_name, s.due_date::text as due_date,
+           greatest(s.period_total - coalesce((
+             select sum(e.amount)
+             from card_statement_payment p
+             join financial_operation o on o.id = p.operation_id and o.owner_id = p.owner_id
+             join account_entry e on e.operation_id = o.id and e.owner_id = o.owner_id and e.account_id = s.account_id and e.amount > 0
+             where p.owner_id = s.owner_id and p.statement_id = s.id and p.status = 'active' and o.status = 'confirmed'
+           ), 0), 0) as remaining
+    from card_statement s
+    join account a on a.id = s.account_id and a.owner_id = s.owner_id
+    where s.owner_id = ${ctx.ownerId} and s.status = 'active' and a.status = 'active' and a.type = 'credit' and s.due_date <= ${until}::date
+    order by s.due_date, a.name limit 50`);
+
+  const out: CardPaymentDue[] = [];
+  const accountsWithUnpaidStmt = new Set<string>();
+  const coveredDueByAccount = new Set<string>();
+
+  for (const s of stmts) {
+    coveredDueByAccount.add(`${s.account_id}:${s.due_date}`);
+    if (parseMoney(s.remaining) > 0n) {
+      accountsWithUnpaidStmt.add(s.account_id);
+      out.push({
+        type: 'card_statement',
+        id: s.id,
+        accountId: s.account_id,
+        name: `Pago tarjeta ${s.account_name}`,
+        dueDate: s.due_date,
+        amount: m(s.remaining),
+      });
+    }
+  }
+
+  const cards = await rows<{ account_id: string; account_name: string; due_day: number; balance: string }>(ctx.trx, sql`
+    select a.id as account_id, a.name as account_name, d.due_day, coalesce(b.balance, 0.00) as balance
+    from account a
+    join credit_account_details d on d.account_id = a.id and d.owner_id = a.owner_id
+    left join v_account_balance b on b.account_id = a.id and b.owner_id = a.owner_id
+    where a.owner_id = ${ctx.ownerId} and a.status = 'active' and a.type = 'credit'`);
+
+  for (const c of cards) {
+    if (accountsWithUnpaidStmt.has(c.account_id)) continue;
+    const bal = parseMoney(c.balance, { allowNegative: true });
+    if (bal >= 0n) continue;
+    const due = nextDueDate(ctx.today, c.due_day);
+    if (due > untilDate) continue;
+    const dueIso = formatISO(due);
+    if (coveredDueByAccount.has(`${c.account_id}:${dueIso}`)) continue;
+    out.push({
+      type: 'card_debt',
+      id: c.account_id,
+      accountId: c.account_id,
+      name: `Pago tarjeta ${c.account_name}`,
+      dueDate: dueIso,
+      amount: m(-bal),
+    });
+  }
+
+  return out.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.name.localeCompare(b.name));
+}
+
 async function collectionsDue(ctx: Ctx, days: number) {
   const until = formatISO(addDays(ctx.today, days));
   return rows<{ due_date: string; n: string; total: string }>(ctx.trx, sql`
@@ -114,6 +195,7 @@ async function cardData(ctx: Ctx, id: CardId, cache: { summary?: Awaited<ReturnT
       const items = [
         ...(await bankInstallments(ctx, 14)).map((b) => ({ type: 'bank_loan', id: b.loan_id, name: `${b.loan_name} · cuota ${b.no}`, dueDate: b.due_date, amount: m(b.remaining) })),
         ...(await recurringDue(ctx, 14)).filter((o) => o.kind === 'expense').map((o) => ({ type: 'recurring', id: o.occurrence_id, name: o.name, dueDate: o.due_date, amount: m(o.amount) })),
+        ...(await cardPaymentsDue(ctx, 14)).map((c) => ({ type: c.type, id: c.id, name: c.name, dueDate: c.dueDate, amount: c.amount })),
       ].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
       return { items: items.slice(0, 10) };
     }
@@ -133,7 +215,7 @@ export async function dashboard(ctx: Ctx) {
 
 const GENERIC: Record<string, string> = {
   renewal: 'Tienes renovaciones próximas', collection: 'Tienes cobros por revisar', recurring: 'Tienes movimientos recurrentes por decidir', loan: 'Tienes cuotas de préstamo próximas',
-  budget: 'Un presupuesto necesita tu atención', capture: 'Tienes propuestas por revisar',
+  card: 'Tienes un pago de tarjeta próximo', budget: 'Un presupuesto necesita tu atención', capture: 'Tienes propuestas por revisar',
 };
 
 interface Reminder { id: string; kind: string; dueDate: string | null; overdue: boolean; title: string; detail: string | null; route: string; count: number; fireAt: string[] }
@@ -174,7 +256,7 @@ export async function reminders(ctx: Ctx, horizonDays = 14) {
     return { fireAt: out, overdue: false };
   };
 
-  const schedule = (kind: 'renewal' | 'collection' | 'recurring' | 'loan', due: string): { fireAt: string[]; overdue: boolean } => {
+  const schedule = (kind: 'renewal' | 'collection' | 'recurring' | 'loan' | 'card', due: string): { fireAt: string[]; overdue: boolean } => {
     const cfg = k[kind];
     const overdue = due < today;
     const out: string[] = [];
@@ -193,6 +275,19 @@ export async function reminders(ctx: Ctx, horizonDays = 14) {
   if (k.collection.enabled) for (const c of await collectionsDue(ctx, horizonDays)) items.push(mk('collection', `collection:${c.due_date}`, c.due_date, Number(c.n), `${c.n} cobro(s) por ${m(c.total)}`, '/contacts', schedule('collection', c.due_date)));
   if (k.recurring.enabled) for (const o of await recurringDue(ctx, horizonDays)) items.push(mk('recurring', `recurring:${o.occurrence_id}`, o.due_date, 1, `${o.name} (${m(o.amount)})`, '/recurring', schedule('recurring', o.due_date)));
   if (k.loan.enabled) for (const b of await bankInstallments(ctx, horizonDays)) items.push(mk('loan', `loan:${b.loan_id}:${b.no}`, b.due_date, 1, `${b.loan_name}: cuota ${b.no} (${m(b.remaining)})`, `/bank-loan/${b.loan_id}`, schedule('loan', b.due_date)));
+  if (k.card.enabled) {
+    for (const c of await cardPaymentsDue(ctx, horizonDays)) {
+      items.push(mk(
+        'card',
+        c.type === 'card_statement' ? `card:stmt:${c.id}` : `card:due:${c.id}:${c.dueDate}`,
+        c.dueDate,
+        1,
+        `${c.name} (${c.amount})`,
+        c.type === 'card_statement' ? `/card-statement/${c.id}` : `/account/${c.id}/card`,
+        schedule('card', c.dueDate),
+      ));
+    }
+  }
   if (k.budget.enabled) for (const b of await listBudgets(ctx)) if (b.current.level !== null) items.push(mk('budget', `budget:${b.id}:${b.current.period.start}:${b.current.level}`, null, 1, `${b.name} al ${b.current.percent ?? 0} %`, `/budgets/${b.id}`, nextDailySlot()));
   if (k.capture.enabled) { const c = await capturePending(ctx); if (c.pendingProposals > 0) items.push(mk('capture', 'capture:pending', null, c.pendingProposals, `${c.pendingProposals} propuesta(s) por revisar`, '/capture', nextDailySlot())); }
 
