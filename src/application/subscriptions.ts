@@ -10,6 +10,7 @@ import { checkPreviewToken, makePreviewToken } from '../infra/preview.js';
 import { assertActiveCategory } from './categories.js';
 import { emitCharges } from './charges.js';
 import { ts, type Ctx } from './context.js';
+import { convertDebtToLoan } from './loans.js';
 
 export interface SubscriptionInput {
   name: string;
@@ -256,26 +257,161 @@ export async function restoreSubscription(ctx: Ctx, id: string) {
   return getSubscription(ctx, id);
 }
 
-/** Elimina definitivamente un servicio SOLO si nunca tuvo pagos al proveedor, cargos, participantes ni historial. Si ya se usó, sugiere archivarlo. */
-export async function deleteSubscription(ctx: Ctx, id: string) {
-  const s = await one<{ id: string; name: string }>(ctx.trx, sql<{ id: string; name: string }>`select id, name from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+async function inspectSubscriptionDelete(ctx: Ctx, id: string) {
+  const s = await one<{ id: string; name: string; mode: string; status: string }>(ctx.trx,
+    sql<{ id: string; name: string; mode: string; status: string }>`select id, name, mode, status from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!s) throw notFound('Subscription');
+
+  const sp = await one<{ total: string; active: string; active_amount: string }>(ctx.trx, sql<{ total: string; active: string; active_amount: string }>`
+    select count(*) as total,
+           count(*) filter (where sp.status = 'active') as active,
+           coalesce(sum(sp.amount_real) filter (where sp.status = 'active'), 0.00) as active_amount
+    from supplier_payment sp join billing_cycle bc on bc.id = sp.cycle_id and bc.owner_id = sp.owner_id
+    where sp.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`);
+
+  const obRows = await rows<{ obligation_id: string }>(ctx.trx, sql<{ obligation_id: string }>`
+    select mc.obligation_id from member_charge mc join billing_cycle bc on bc.id = mc.cycle_id and bc.owner_id = mc.owner_id
+    where mc.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`);
+  const obligationIds = obRows.map((r) => r.obligation_id);
+
+  const participantsRow = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(distinct contact_id) as n from membership where owner_id = ${ctx.ownerId} and subscription_id = ${id} and not is_owner`);
+  const membershipsRow = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from membership where owner_id = ${ctx.ownerId} and subscription_id = ${id} and not is_owner`);
+
+  const alloc = obligationIds.length > 0
+    ? await one<{ count: string; total: string }>(ctx.trx, sql<{ count: string; total: string }>`
+        select count(*) as count, coalesce(sum(amount), 0.00) as total from payment_allocation
+        where owner_id = ${ctx.ownerId} and obligation_id = any(${obligationIds}::uuid[]) and status = 'active'`)
+    : { count: '0', total: '0.00' };
+
+  const resv = await one<{ total: string; active: string; active_amount: string }>(ctx.trx, sql<{ total: string; active: string; active_amount: string }>`
+    select count(*) as total,
+           count(*) filter (where status = 'active') as active,
+           coalesce(sum(amount) filter (where status = 'active'), 0.00) as active_amount
+    from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id}`);
+
+  const calRow = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+    select count(*) as n from calendar_change where owner_id = ${ctx.ownerId} and subscription_id = ${id}`);
+
+  const debtRows = obligationIds.length > 0
+    ? await rows<{ contact_id: string; contact_name: string; obligation_id: string; pending: string }>(ctx.trx, sql<{ contact_id: string; contact_name: string; obligation_id: string; pending: string }>`
+        select b.contact_id, ct.name as contact_name, b.obligation_id, b.pending_amount as pending
+        from v_obligation_balance b
+        join contact ct on ct.id = b.contact_id and ct.owner_id = b.owner_id
+        where b.owner_id = ${ctx.ownerId} and b.obligation_id = any(${obligationIds}::uuid[]) and b.pending_amount > 0
+        order by lower(ct.name), b.obligation_id`)
+    : [];
+
+  const byContact = new Map<string, { contactId: string; contactName: string; obligationIds: string[]; amount: bigint }>();
+  for (const r of debtRows) {
+    const cur = byContact.get(r.contact_id) ?? { contactId: r.contact_id, contactName: r.contact_name, obligationIds: [], amount: 0n };
+    cur.obligationIds.push(r.obligation_id);
+    cur.amount += parseMoney(r.pending);
+    byContact.set(r.contact_id, cur);
+  }
+  const pendingDebts = [...byContact.values()].map((d) => ({
+    contactId: d.contactId,
+    contactName: d.contactName,
+    chargesCount: d.obligationIds.length,
+    obligationIds: d.obligationIds,
+    amount: formatMoney(d.amount),
+  }));
+  const totalPendingDebt = formatMoney([...byContact.values()].reduce((a, d) => a + d.amount, 0n));
+
+  const supplierPayments = Number(sp?.total ?? 0);
+  const activeSupplierPayments = Number(sp?.active ?? 0);
+  const participants = Number(participantsRow?.n ?? 0);
+  const nonOwnerMemberships = Number(membershipsRow?.n ?? 0);
+  const charges = obligationIds.length;
+  const appliedPaymentsCount = Number(alloc?.count ?? 0);
+  const totalReservations = Number(resv?.total ?? 0);
+  const activeReservations = Number(resv?.active ?? 0);
+  const calendarChanges = Number(calRow?.n ?? 0);
+
   const usage: Record<string, number> = {};
-  const add = (label: string, n: string | undefined) => { if (Number(n ?? 0) > 0) usage[label] = Number(n); };
-  add('pagos al proveedor', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select count(*) as n from supplier_payment sp join billing_cycle bc on bc.id = sp.cycle_id and bc.owner_id = sp.owner_id
-    where sp.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`))?.n);
-  add('cargos emitidos', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select count(*) as n from member_charge mc join billing_cycle bc on bc.id = mc.cycle_id and bc.owner_id = mc.owner_id
-    where mc.owner_id = ${ctx.ownerId} and bc.subscription_id = ${id}`))?.n);
-  add('participantes', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select count(*) as n from membership where owner_id = ${ctx.ownerId} and subscription_id = ${id} and not is_owner`))?.n);
-  add('reservas de crédito', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select count(*) as n from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id}`))?.n);
-  add('cambios de calendario', (await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
-    select count(*) as n from calendar_change where owner_id = ${ctx.ownerId} and subscription_id = ${id}`))?.n);
-  if (Object.keys(usage).length > 0) {
-    throw conflict('SUBSCRIPTION_IN_USE', 'El servicio ya tiene historial o participantes: no se puede eliminar sin romperlo. Puedes archivarlo', { usage });
+  if (supplierPayments > 0) usage['pagos al proveedor'] = supplierPayments;
+  if (charges > 0) usage['cargos emitidos'] = charges;
+  if (nonOwnerMemberships > 0) usage['participantes'] = nonOwnerMemberships;
+  if (totalReservations > 0) usage['reservas de crédito'] = totalReservations;
+  if (calendarChanges > 0) usage['cambios de calendario'] = calendarChanges;
+
+  const isEmpty = Object.keys(usage).length === 0;
+  return {
+    sub: s,
+    isEmpty,
+    usage,
+    obligationIds,
+    impact: {
+      supplierPayments,
+      activeSupplierPayments,
+      totalPaidToSupplier: formatMoney(parseMoney(sp?.active_amount ?? '0.00')),
+      participants,
+      charges,
+      appliedPaymentsCount,
+      appliedPaymentsTotal: formatMoney(parseMoney(alloc?.total ?? '0.00')),
+      activeReservations,
+      activeReservationsTotal: formatMoney(parseMoney(resv?.active_amount ?? '0.00')),
+      calendarChanges,
+    },
+    pendingDebts,
+    totalPendingDebt,
+  };
+}
+
+/** Vista previa de eliminar un servicio: detalla qué historial se perderá y qué deudas pendientes se pueden pasar a préstamo. */
+export async function previewDeleteSubscription(ctx: Ctx, id: string) {
+  const info = await inspectSubscriptionDelete(ctx, id);
+  return {
+    subscription: info.sub,
+    isEmpty: info.isEmpty,
+    impact: info.impact,
+    pendingDebts: info.pendingDebts.map(({ contactId, contactName, chargesCount, amount }) => ({ contactId, contactName, chargesCount, amount })),
+    totalPendingDebt: info.totalPendingDebt,
+  };
+}
+
+/**
+ * Elimina definitivamente un servicio.
+ * Sin `force`, solo borra si nunca tuvo historial (comportamiento seguro por defecto).
+ * Con `force: true`, permite eliminar tras confirmar el impacto y elegir qué hacer con deudas pendientes (`convert_to_loan` o `discard`).
+ * Los movimientos y saldos de las cuentas bancarias nunca se borran.
+ */
+export async function deleteSubscription(ctx: Ctx, id: string, opts?: { force?: boolean; unpaidHandling?: 'convert_to_loan' | 'discard' }) {
+  const info = await inspectSubscriptionDelete(ctx, id);
+  if (!opts?.force && !info.isEmpty) {
+    throw conflict('SUBSCRIPTION_IN_USE', 'El servicio ya tiene historial o participantes: no se puede eliminar sin romperlo. Puedes archivarlo', { usage: info.usage });
+  }
+  const convertedLoans: Array<{ id: string; contactId: string; contactName: string; principal: string }> = [];
+  if (opts?.force) {
+    if (info.pendingDebts.length > 0 && !opts.unpaidHandling) {
+      throw unprocessable('UNPAID_HANDLING_REQUIRED', 'Hay deudas pendientes: elige si se pasan a préstamo o se descartan');
+    }
+    if (info.pendingDebts.length > 0 && opts.unpaidHandling === 'convert_to_loan') {
+      for (const d of info.pendingDebts) {
+        const loan = await convertDebtToLoan(ctx, {
+          contactId: d.contactId,
+          obligationIds: d.obligationIds,
+          trigger: 'manual',
+          reason: `Deuda pendiente al eliminar servicio ${info.sub.name}`,
+        });
+        if (loan) {
+          convertedLoans.push({ id: loan.id, contactId: d.contactId, contactName: d.contactName, principal: loan.principal });
+        }
+      }
+    }
+    if (info.obligationIds.length > 0) {
+      await sql`update loan_component set origin_obligation_id = null where owner_id = ${ctx.ownerId} and origin_obligation_id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+      await sql`delete from debt_conversion_item where owner_id = ${ctx.ownerId} and source_obligation_id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+      await sql`delete from payment_allocation where owner_id = ${ctx.ownerId} and obligation_id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+      await sql`delete from charge_adjustment where owner_id = ${ctx.ownerId} and obligation_id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+      await sql`delete from member_charge where owner_id = ${ctx.ownerId} and obligation_id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+      await sql`delete from receivable_obligation where owner_id = ${ctx.ownerId} and id = any(${info.obligationIds}::uuid[])`.execute(ctx.trx);
+    }
+    await sql`delete from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id}`.execute(ctx.trx);
+    await sql`delete from supplier_payment where owner_id = ${ctx.ownerId} and cycle_id in (select id from billing_cycle where owner_id = ${ctx.ownerId} and subscription_id = ${id})`.execute(ctx.trx);
+    await sql`delete from courtesy where owner_id = ${ctx.ownerId} and seat_id in (select id from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id})`.execute(ctx.trx);
+    await sql`delete from calendar_change where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
   }
   await sql`delete from seat_terms where owner_id = ${ctx.ownerId} and seat_id in (select id from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id})`.execute(ctx.trx);
   await sql`delete from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
@@ -283,6 +419,9 @@ export async function deleteSubscription(ctx: Ctx, id: string) {
   await sql`delete from billing_cycle where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
   await sql`delete from subscription_terms where owner_id = ${ctx.ownerId} and subscription_id = ${id}`.execute(ctx.trx);
   await sql`delete from subscription where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
-  await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.delete', entityType: 'subscription', entityId: id, changes: { name: s.name } });
-  return { id, deleted: true };
+  await audit(ctx.trx, {
+    ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'subscription.delete', entityType: 'subscription', entityId: id,
+    changes: { name: info.sub.name, ...(opts?.force ? { force: true, unpaidHandling: opts.unpaidHandling ?? null, convertedLoans: convertedLoans.length } : {}) },
+  });
+  return convertedLoans.length > 0 ? { id, deleted: true as const, convertedLoans } : { id, deleted: true as const };
 }

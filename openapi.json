@@ -2867,12 +2867,12 @@
         }
       }
     },
-    "/subscriptions/{id}/delete": {
+    "/subscriptions/{id}/delete/preview": {
       "post": {
         "tags": [
           "Servicios"
         ],
-        "summary": "Elimina un servicio sin pagos, cargos ni participantes",
+        "summary": "Vista previa de eliminar un servicio: historial afectado y deudas pendientes",
         "security": [
           {
             "bearer": []
@@ -2889,6 +2889,88 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND (también para recursos de otro usuario)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR u otro error de negocio (ver docs 13 §3)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriptions/{id}/delete": {
+      "post": {
+        "tags": [
+          "Servicios"
+        ],
+        "summary": "Elimina definitivamente un servicio (con opción force y manejo de deudas pendientes)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "unpaidHandling": {
+                    "type": "string",
+                    "enum": [
+                      "convert_to_loan",
+                      "discard"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"

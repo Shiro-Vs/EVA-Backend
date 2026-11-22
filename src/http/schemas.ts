@@ -81,6 +81,10 @@ export const subscriptionCreate = subscriptionBody.extend({ confirmCalendarMisma
 export const subscriptionPatch = z.object({
   name: text(60).optional(), provider: optText(60), color: optText(20), icon: optText(40), preferredAccountId: uuid.nullish(), categoryId: uuid.nullish(),
 }).strict();
+export const subscriptionDelete = z.object({
+  force: z.boolean().optional(),
+  unpaidHandling: z.enum(['convert_to_loan', 'discard']).optional(),
+}).strict();
 
 export const generateBody = z.object({ ahead: z.number().int().min(1).max(12) }).strict();
 

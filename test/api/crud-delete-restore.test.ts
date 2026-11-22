@@ -41,6 +41,50 @@ describe('CRUD completo: eliminar con validaciones y restaurar', () => {
     const rest = await api.post(u.token, `/subscriptions/${personal.id}/restore`, {});
     expect(rest.status).toBe(200);
     expect(rest.body.status).toBe('active');
+
+    // Vista previa y borrado forzado con conversión de deudas pendientes a préstamo.
+    const prev = await api.post(u.token, `/subscriptions/${used.id}/delete/preview`, {});
+    expect(prev.status).toBe(200);
+    expect(prev.body.isEmpty).toBe(false);
+    expect(prev.body.impact.participants).toBe(1);
+    expect(prev.body.pendingDebts).toHaveLength(1);
+    expect(prev.body.pendingDebts[0].contactName).toBe('Ana');
+    expect(Number(prev.body.totalPendingDebt)).toBeGreaterThan(0);
+    const expectedDebt = prev.body.totalPendingDebt;
+
+    // Sin indicar qué hacer con la deuda pendiente, force falla con UNPAID_HANDLING_REQUIRED.
+    const missingOpt = await api.post(u.token, `/subscriptions/${used.id}/delete`, { force: true });
+    expect(missingOpt.status).toBe(422);
+    expect(missingOpt.body.error.code).toBe('UNPAID_HANDLING_REQUIRED');
+
+    // Con convert_to_loan: borra el servicio y crea el préstamo por la deuda pendiente.
+    const forceConv = await api.post(u.token, `/subscriptions/${used.id}/delete`, { force: true, unpaidHandling: 'convert_to_loan' });
+    expect(forceConv.status, JSON.stringify(forceConv.body)).toBe(200);
+    expect(forceConv.body.deleted).toBe(true);
+    expect(forceConv.body.convertedLoans).toHaveLength(1);
+    expect(forceConv.body.convertedLoans[0].principal).toBe(expectedDebt);
+    expect((await api.get(u.token, `/subscriptions/${used.id}`)).status).toBe(404);
+    const anaLoans = await api.get(u.token, `/loans?contactId=${ana.id}`);
+    expect(anaLoans.status).toBe(200);
+    expect(anaLoans.body.items).toHaveLength(1);
+    expect(anaLoans.body.items[0].pending).toBe(expectedDebt);
+
+    // Con discard: borra el servicio y descarta la deuda pendiente sin crear préstamo.
+    const used2 = await createService(api, u.token, { name: 'Disney+' });
+    const luis = await createContact(api, u.token, 'Luis');
+    await joinSeat(api, u.token, used2.id, luis.id, { quota: '12.00' });
+    const forceDiscard = await api.post(u.token, `/subscriptions/${used2.id}/delete`, { force: true, unpaidHandling: 'discard' });
+    expect(forceDiscard.status, JSON.stringify(forceDiscard.body)).toBe(200);
+    expect(forceDiscard.body).toEqual({ id: used2.id, deleted: true });
+    expect((await api.get(u.token, `/subscriptions/${used2.id}`)).status).toBe(404);
+    expect((await api.get(u.token, `/loans?contactId=${luis.id}`)).body.items).toHaveLength(0);
+
+    // Borrado forzado en servicio personal con pago al proveedor: mantiene el saldo de la cuenta intacto.
+    const accBefore = (await api.get(u.token, `/accounts/${acc.id}`)).body.balance;
+    const forcePersonal = await api.post(u.token, `/subscriptions/${personal.id}/delete`, { force: true });
+    expect(forcePersonal.status, JSON.stringify(forcePersonal.body)).toBe(200);
+    expect((await api.get(u.token, `/subscriptions/${personal.id}`)).status).toBe(404);
+    expect((await api.get(u.token, `/accounts/${acc.id}`)).body.balance).toBe(accBefore);
   });
 
   it('Cuentas y Contactos: eliminan sin historial, bloquean en uso, archivan y restauran', async () => {
