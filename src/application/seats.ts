@@ -27,14 +27,14 @@ interface Plan {
 
 async function buildPlan(ctx: Ctx, subscriptionId: string, i: SeatInput): Promise<Plan> {
   const sub = await ensureSubscription(ctx, subscriptionId);
-  if (sub.status === 'archived') throw unprocessable('SUBSCRIPTION_ARCHIVED', 'The subscription is archived');
-  if (sub.status === 'suspended') throw unprocessable('SUBSCRIPTION_SUSPENDED', 'The subscription is suspended; reactivate it before adding people');
+  if (sub.status === 'archived') throw unprocessable('SUBSCRIPTION_ARCHIVED', 'El servicio está archivado');
+  if (sub.status === 'suspended') throw unprocessable('SUBSCRIPTION_SUSPENDED', 'El servicio está suspendido; reactívalo antes de agregar participantes');
   const det = await one<{ mode: string; capacity: number }>(ctx.trx, sql<{ mode: string; capacity: number }>`select mode, capacity from subscription where owner_id = ${ctx.ownerId} and id = ${subscriptionId}`);
-  if (det!.mode === 'personal') throw unprocessable('SUBSCRIPTION_PERSONAL', 'A personal subscription does not admit seats for other people');
+  if (det!.mode === 'personal') throw unprocessable('SUBSCRIPTION_PERSONAL', 'Un servicio personal no admite participantes');
 
   const contact = await one<{ name: string; status: string }>(ctx.trx, sql<{ name: string; status: string }>`select name, status from contact where owner_id = ${ctx.ownerId} and id = ${i.contactId}`);
   if (!contact) throw notFound('Contact');
-  if (contact.status !== 'active') throw unprocessable('CONTACT_ARCHIVED', 'The contact is archived');
+  if (contact.status !== 'active') throw unprocessable('CONTACT_ARCHIVED', 'El contacto está archivado');
 
   const quota = parseMoney(i.quota);
   const joinDate = i.joinDate ? parseISO(i.joinDate) : ctx.today;
@@ -44,7 +44,7 @@ async function buildPlan(ctx: Ctx, subscriptionId: string, i: SeatInput): Promis
   const cyc = await one<{ id: string; start_date: string; end_date: string; terms_snapshot: { baseDays: number } }>(ctx.trx, sql<{ id: string; start_date: string; end_date: string; terms_snapshot: { baseDays: number } }>`
     select id, start_date, end_date, terms_snapshot from billing_cycle
     where owner_id = ${ctx.ownerId} and subscription_id = ${subscriptionId} and start_date <= ${today}::date and end_date > ${today}::date`);
-  if (!cyc) throw unprocessable('JOIN_OUT_OF_CYCLE', 'There is no active cycle for today');
+  if (!cyc) throw unprocessable('JOIN_OUT_OF_CYCLE', 'No hay un ciclo activo para hoy en este servicio');
   const cycle = { id: cyc.id, start: parseISO(cyc.start_date), end: parseISO(cyc.end_date), baseDays: cyc.terms_snapshot.baseDays };
 
   const prof = await one<{ default_free_days: number }>(ctx.trx, sql<{ default_free_days: number }>`select default_free_days from user_profile where id = ${ctx.ownerId}`);
@@ -79,8 +79,8 @@ const calcJson = (r: JoinResult, p: Plan) => ({
   mode: r.mode, remainingDays: r.remainingDays, baseDays: r.baseDays, freeDaysThreshold: r.freeDaysThreshold,
   quota: formatMoney(r.quota), prorated: formatMoney(r.prorated), gross: formatMoney(r.gross), exemption: formatMoney(r.exemption), net: formatMoney(r.net),
   rule: r.rule,
-  formula: r.mode === 'full_cycle' ? `cuota completa ${formatMoney(r.quota)}`
-    : `min(${formatMoney(r.quota)}, ceil_sol(${formatMoney(r.quota)} × ${r.remainingDays} / ${r.baseDays}))${r.mode === 'trial_free' ? `; ${r.remainingDays} ≤ ${r.freeDaysThreshold} ⇒ gratis` : ''}`,
+  formula: r.mode === 'full_cycle' ? `Cuota completa: S/ ${formatMoney(r.quota)}`
+    : `S/ ${formatMoney(r.quota)} × ${r.remainingDays} de ${r.baseDays} días${r.mode === 'trial_free' ? ` (${r.remainingDays} ≤ ${r.freeDaysThreshold} días gratis)` : ''}`,
   gSource: p.gSource,
 });
 
@@ -105,7 +105,7 @@ export async function createSeat(ctx: Ctx, subscriptionId: string, i: SeatInput 
   await syncSubscription(ctx, subscriptionId); // bloquea la fila del servicio: serializa altas simultáneas (A28d)
   const p = await buildPlan(ctx, subscriptionId, i);
   checkPreviewToken(ctx.previewSecret, i.previewToken, { scope: 'seat.join', ownerId: ctx.ownerId, inputs: inputsOf(subscriptionId, i), state: fingerprint(p) }, ctx.nowMs);
-  if (p.occupied >= p.capacity) throw unprocessable('CAPACITY_EXCEEDED', 'There are no free seats on that date', { occupied: p.occupied, capacity: p.capacity });
+  if (p.occupied >= p.capacity) throw unprocessable('CAPACITY_EXCEEDED', 'No hay plazas libres en esa fecha', { occupied: p.occupied, capacity: p.capacity });
 
   let membershipId = p.existingMembershipId;
   if (membershipId && p.existingStatus === 'ending') {

@@ -56,7 +56,7 @@ export function previewSubscription(ctx: Ctx, i: SubscriptionInput & { occupiedS
   const quota = suggestedQuota(p.price, occupied);
   return {
     calendar: { ok: p.calendar.ok, expectedNextPayment: formatISO(p.calendar.expected), diffDays: p.calendar.diffDays },
-    suggestedQuota: { amount: formatMoney(quota), occupiedSeats: occupied, formula: `ceil(${formatMoney(p.price)} / ${occupied})` },
+    suggestedQuota: { amount: formatMoney(quota), occupiedSeats: occupied, formula: `S/ ${formatMoney(p.price)} ÷ ${occupied} ${occupied === 1 ? 'plaza' : 'plazas'}` },
     cycles: p.cycles.slice(0, 2).map(cycleJson),
     baseDays: p.cycles[0]!.termsSnapshot.baseDays,
     previewToken: makePreviewToken(ctx.previewSecret, { scope: 'subscription.create', ownerId: ctx.ownerId, inputs: previewCore(i), state: null }, ctx.nowMs),
@@ -190,12 +190,17 @@ export async function getSubscription(ctx: Ctx, id: string) {
   const todayIso = formatISO(ctx.today);
   const current = cycles.find((c) => c.start_date <= todayIso && todayIso < c.end_date) ?? null;
   const next = cycles.find((c) => c.start_date > todayIso) ?? null;
+  const paidRow = current
+    ? await one<{ ok: number }>(ctx.trx, sql<{ ok: number }>`
+        select 1 as ok from supplier_payment where owner_id = ${ctx.ownerId} and cycle_id = ${current.id} and status = 'active' limit 1`)
+    : null;
   return {
     id: s!.id, name: s!.name, provider: s!.provider, mode: s!.mode, capacity: s!.capacity, preferredAccountId: s!.preferred_account_id,
     color: s!.color, icon: s!.icon, categoryId: s!.category_id, status: s!.status, currency: s!.currency, version: s!.version, createdAt: ts(s!.created_at),
     occupiedSeats: Number(s!.occupied),
     terms: t ? { announcedPrice: formatMoney(parseMoney(t.announced_price)), interval: { unit: t.interval_unit, count: t.interval_count }, anchor: t.anchor_date, validFrom: t.valid_from } : null,
     currentCycle: current ? cycleView(current) : null,
+    currentCyclePaid: !!paidRow,
     nextCycle: next ? cycleView(next) : null,
     baseDays: current ? baseDays({ unit: current.terms_snapshot.interval.unit, count: current.terms_snapshot.interval.count }, parseISO(current.start_date), parseISO(current.end_date)) : null,
   };
@@ -213,18 +218,34 @@ export async function listSubscriptions(ctx: Ctx, status?: string) {
   return out;
 }
 
-export async function patchSubscription(ctx: Ctx, id: string, version: number, p: { name?: string; provider?: string | null; color?: string | null; icon?: string | null; preferredAccountId?: string | null; categoryId?: string | null }) {
-  const cur = await one<{ name: string; provider: string | null; color: string | null; icon: string | null; preferred_account_id: string | null; category_id: string | null; version: number }>(ctx.trx,
-    sql`select name, provider, color, icon, preferred_account_id, category_id, version from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+export async function patchSubscription(ctx: Ctx, id: string, version: number, p: { name?: string; provider?: string | null; capacity?: number; color?: string | null; icon?: string | null; preferredAccountId?: string | null; categoryId?: string | null }) {
+  const cur = await one<{ name: string; provider: string | null; mode: string; capacity: number; color: string | null; icon: string | null; preferred_account_id: string | null; category_id: string | null; version: number }>(ctx.trx,
+    sql`select name, provider, mode, capacity, color, icon, preferred_account_id, category_id, version from subscription where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!cur) throw notFound('Subscription');
-  if (cur.version !== version) throw conflict('CONFLICT_VERSION', 'The subscription was modified; reload and retry');
+  if (cur.version !== version) throw conflict('CONFLICT_VERSION', 'El servicio fue modificado; recarga e intenta de nuevo');
   if (p.preferredAccountId) {
     const a = await one(ctx.trx, sql`select 1 from account where owner_id = ${ctx.ownerId} and id = ${p.preferredAccountId}`);
     if (!a) throw notFound('Account');
   }
   if (p.categoryId) await assertActiveCategory(ctx, p.categoryId);
+  let nextCapacity = cur.capacity;
+  if (p.capacity !== undefined) {
+    if (cur.mode === 'personal' && p.capacity !== 1) {
+      throw unprocessable('VALIDATION_ERROR', 'Un servicio personal siempre tiene 1 plaza');
+    }
+    if (cur.mode === 'shared' && p.capacity < 2) {
+      throw unprocessable('VALIDATION_ERROR', 'Un servicio compartido debe tener al menos 2 plazas');
+    }
+    const occ = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
+      select count(*) as n from seat where owner_id = ${ctx.ownerId} and subscription_id = ${id}
+        and start_date <= ${formatISO(ctx.today)}::date and (end_date is null or end_date > ${formatISO(ctx.today)}::date)`);
+    if (p.capacity < Number(occ!.n)) {
+      throw unprocessable('CAPACITY_BELOW_OCCUPIED', `No puedes bajar las plazas a ${p.capacity} porque ya hay ${occ!.n} ocupadas`);
+    }
+    nextCapacity = p.capacity;
+  }
   await sql`
-    update subscription set name = ${(p.name ?? cur.name).trim()}, provider = ${p.provider === undefined ? cur.provider : p.provider}, category_id = ${p.categoryId === undefined ? cur.category_id : p.categoryId},
+    update subscription set name = ${(p.name ?? cur.name).trim()}, provider = ${p.provider === undefined ? cur.provider : p.provider}, capacity = ${nextCapacity}, category_id = ${p.categoryId === undefined ? cur.category_id : p.categoryId},
       color = ${p.color === undefined ? cur.color : p.color}, icon = ${p.icon === undefined ? cur.icon : p.icon},
       preferred_account_id = ${p.preferredAccountId === undefined ? cur.preferred_account_id : p.preferredAccountId}
     where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
@@ -238,7 +259,7 @@ export async function archiveSubscription(ctx: Ctx, id: string) {
   const n = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
     select count(*) as n from seat s join membership m on m.id = s.membership_id and m.owner_id = s.owner_id
     where s.owner_id = ${ctx.ownerId} and s.subscription_id = ${id} and (s.end_date is null or s.end_date > ${formatISO(ctx.today)}::date) and not m.is_owner`);
-  if (Number(n!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_ACTIVE_SEATS', 'The subscription still has active seats; remove them first');
+  if (Number(n!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_ACTIVE_SEATS', 'El servicio todavía tiene participantes activos; dalos de baja primero');
   const res = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`
     select count(*) as n from credit_reservation where owner_id = ${ctx.ownerId} and target_subscription_id = ${id} and status = 'active'`);
   if (Number(res!.n) > 0) throw unprocessable('SUBSCRIPTION_HAS_RESERVATIONS', 'Hay crédito reservado para este servicio: muévelo a otro servicio o libéralo antes de archivar');

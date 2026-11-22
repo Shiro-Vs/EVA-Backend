@@ -46,7 +46,7 @@ export async function registerSupplierPayment(ctx: Ctx, cycleId: string, i: { ac
   const amount = parseMoney(i.amount);
   if (amount <= 0n) throw unprocessable('VALIDATION_ERROR', 'El importe debe ser positivo');
   const paidOn = resolveDate(ctx, i.paidOn);
-  if (await activePayment(ctx, cycleId)) throw unprocessable('SUPPLIER_PAYMENT_EXISTS', 'This cycle already has an active supplier payment');
+  if (await activePayment(ctx, cycleId)) throw unprocessable('SUPPLIER_PAYMENT_EXISTS', 'Este ciclo ya tiene un pago registrado al proveedor');
   await activeAccount(ctx, i.accountId); // en una cuenta de crédito el asiento negativo aumenta la deuda de la tarjeta
 
   // El pago hereda la categoría del servicio: así consume presupuesto (RN-BU06).
@@ -66,7 +66,7 @@ export async function reverseSupplierPayment(ctx: Ctx, id: string, reason: strin
   const p = await one<{ id: string; operation_id: string; status: string; cycle_id: string }>(ctx.trx, sql<{ id: string; operation_id: string; status: string; cycle_id: string }>`
     select id, operation_id, status, cycle_id from supplier_payment where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!p) throw notFound('Supplier payment');
-  if (p.status === 'reversed') throw unprocessable('ALREADY_REVERSED', 'The supplier payment is already reversed');
+  if (p.status === 'reversed') throw unprocessable('ALREADY_REVERSED', 'Este pago al proveedor ya fue revertido');
   await reverseOperationCore(ctx, p.operation_id, reason, undefined, { allowLinked: true });
   await sql`update supplier_payment set status = 'reversed' where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
   await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'supplier_payment.reverse', entityType: 'supplier_payment', entityId: id, reason });

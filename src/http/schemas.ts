@@ -80,7 +80,13 @@ export const subscriptionBody = z.object({
 export const subscriptionPreview = subscriptionBody.extend({ occupiedSeats: z.number().int().min(1).max(50).optional() }).strict();
 export const subscriptionCreate = subscriptionBody.extend({ confirmCalendarMismatch: z.boolean().optional(), previewToken: z.string().min(10) }).strict();
 export const subscriptionPatch = z.object({
-  name: text(60).optional(), provider: optText(60), color: optText(20), icon: optText(40), preferredAccountId: uuid.nullish(), categoryId: uuid.nullish(),
+  name: text(60).optional(),
+  provider: optText(60),
+  capacity: z.number().int().min(1).max(50).optional(),
+  color: optText(20),
+  icon: optText(40),
+  preferredAccountId: uuid.nullish(),
+  categoryId: uuid.nullish(),
 }).strict();
 export const subscriptionDelete = z.object({
   force: z.boolean().optional(),
