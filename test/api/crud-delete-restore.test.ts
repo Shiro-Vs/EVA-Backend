@@ -102,12 +102,29 @@ describe('CRUD completo: eliminar con validaciones y restaurar', () => {
     const restAcc = await api.post(u.token, `/accounts/${usedAcc.id}/restore`, {});
     expect(restAcc.body.status).toBe('active');
 
+    // Vista previa y borrado forzado de cuenta con movimientos: desaparece de /accounts pero los movimientos muestran accountDeleted=true.
+    const expense = (await api.post(u.token, '/operations', { kind: 'expense', accountId: usedAcc.id, amount: '15.00', date: '2026-10-10', description: 'Café' })).body;
+    const accPrev = await api.post(u.token, `/accounts/${usedAcc.id}/delete/preview`, {});
+    expect(accPrev.status).toBe(200);
+    expect(accPrev.body.isEmpty).toBe(false);
+    expect(accPrev.body.usage.movimientos).toBe(2);
+    const forceAcc = await api.post(u.token, `/accounts/${usedAcc.id}/delete`, { force: true });
+    expect(forceAcc.status, JSON.stringify(forceAcc.body)).toBe(200);
+    expect(forceAcc.body).toEqual({ id: usedAcc.id, deleted: true });
+    expect((await api.get(u.token, `/accounts/${usedAcc.id}`)).status).toBe(404);
+    expect((await api.get(u.token, '/accounts')).body.items).toEqual([]);
+    const opAfter = (await api.get(u.token, `/operations/${expense.id}`)).body;
+    expect(opAfter.entries[0]).toMatchObject({ accountId: usedAcc.id, accountName: 'Con saldo', accountDeleted: true });
+    const listAfter = (await api.get(u.token, '/operations?kind=expense')).body.items;
+    expect(listAfter[0]).toMatchObject({ accountName: 'Con saldo', accountDeleted: true });
+
+    const activeAcc = await createAccount(api, u.token, 'Activa', '50.00');
     const emptyContact = await createContact(api, u.token, 'Temporal');
     expect((await api.post(u.token, `/contacts/${emptyContact.id}/delete`, {})).body).toEqual({ id: emptyContact.id, deleted: true });
     expect((await api.get(u.token, `/contacts/${emptyContact.id}`)).status).toBe(404);
 
     const usedContact = await createContact(api, u.token, 'Beto');
-    await api.post(u.token, '/operations', { kind: 'expense', accountId: usedAcc.id, amount: '10.00', date: '2026-10-10', contactId: usedContact.id });
+    await api.post(u.token, '/operations', { kind: 'expense', accountId: activeAcc.id, amount: '10.00', date: '2026-10-10', contactId: usedContact.id });
     expect((await api.post(u.token, `/contacts/${usedContact.id}/delete`, {})).body.error.code).toBe('CONTACT_IN_USE');
     expect((await api.post(u.token, `/contacts/${usedContact.id}/archive`, {})).body.contact.status).toBe('archived');
     expect((await api.post(u.token, `/contacts/${usedContact.id}/restore`, {})).body.status).toBe('active');

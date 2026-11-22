@@ -30,7 +30,8 @@ export const ROUTES: Doc[] = [
   D('patch', '/accounts/{id}', 'Cuentas', 'Edita datos de la cuenta', { body: s.accountPatch, ifMatch: true }),
   D('post', '/accounts/{id}/archive', 'Cuentas', 'Archiva la cuenta (no la borra)'),
   D('post', '/accounts/{id}/restore', 'Cuentas', 'Restaura una cuenta archivada'),
-  D('post', '/accounts/{id}/delete', 'Cuentas', 'Elimina una cuenta sin movimientos ni configuración vinculada'),
+  D('post', '/accounts/{id}/delete/preview', 'Cuentas', 'Vista previa de eliminar una cuenta: saldo e historial vinculado'),
+  D('post', '/accounts/{id}/delete', 'Cuentas', 'Elimina una cuenta (con force:true la da de baja conservando movimientos como «Cuenta eliminada»)', { body: s.bankAccountDelete }),
   D('get', '/accounts/{id}/entries', 'Cuentas', 'Asientos con saldo acumulado (paginado)'),
 
   D('post', '/operations', 'Operaciones', 'Ingreso, gasto o transferencia manual', { body: s.operationCreate, idempotent: true, status: 201 }),

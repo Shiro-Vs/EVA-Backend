@@ -63,9 +63,14 @@ export function coreRoutes(app: FastifyInstance, deps: HttpDeps) {
     const { id } = parse(idParam, req.params);
     return withCtx(deps, req, (ctx) => accounts.restoreAccount(ctx, id));
   });
+  app.post('/accounts/:id/delete/preview', async (req) => {
+    const { id } = parse(idParam, req.params);
+    return withCtx(deps, req, (ctx) => accounts.previewDeleteAccount(ctx, id));
+  });
   app.post('/accounts/:id/delete', async (req) => {
     const { id } = parse(idParam, req.params);
-    return withCtx(deps, req, (ctx) => accounts.deleteAccount(ctx, id));
+    const body = req.body ? parse(s.bankAccountDelete, req.body) : {};
+    return withCtx(deps, req, (ctx) => accounts.deleteAccount(ctx, id, body));
   });
   app.get('/accounts/:id/entries', async (req) => {
     const { id } = parse(idParam, req.params);

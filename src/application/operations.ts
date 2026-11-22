@@ -4,6 +4,7 @@ import { formatMoney, parseMoney } from '../domain/money.js';
 import { notFound, unprocessable } from '../http/errors.js';
 import { audit } from '../infra/audit.js';
 import { one, rows } from '../infra/db/db.js';
+import { DELETED_ACCOUNT_MARKER } from './accounts.js';
 import { impactOf } from './budgets.js';
 import { assertActiveCategory } from './categories.js';
 import { autoClassify, decisionsOf } from './classification.js';
@@ -149,14 +150,17 @@ export async function getOperation(ctx: Ctx, id: string) {
     ctx.trx, sql`select o.id, o.kind, o.occurred_on, o.occurred_time, o.description, o.status, o.reversal_of_id, o.reason, o.version, o.created_at, o.contact_id, o.category_id, o.concept, c.name as category_name
       from financial_operation o left join category c on c.id = o.category_id and c.owner_id = o.owner_id where o.owner_id = ${ctx.ownerId} and o.id = ${id}`);
   if (!op) throw notFound('Operation');
-  const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id} order by amount`);
+  const es = await rows<{ account_id: string; account_name: string; account_deleted: boolean; amount: string }>(ctx.trx, sql`
+    select e.account_id, a.name as account_name, (a.status = 'archived' and coalesce(a.icon, '') = ${DELETED_ACCOUNT_MARKER}) as account_deleted, e.amount
+    from account_entry e join account a on a.id = e.account_id and a.owner_id = e.owner_id
+    where e.owner_id = ${ctx.ownerId} and e.operation_id = ${id} order by e.amount`);
   const links = await operationLinks(ctx, id);
   return {
     links,
     id: op.id, kind: op.kind, occurredOn: op.occurred_on, occurredTime: op.occurred_time ? op.occurred_time.slice(0, 5) : null, description: op.description, status: op.status,
     reversalOfId: op.reversal_of_id, reason: op.reason, version: op.version, createdAt: ts(op.created_at),
     concept: op.concept, contactId: op.contact_id, category: op.category_id ? { id: op.category_id, name: op.category_name } : null, classificationTrail: await decisionsOf(ctx, id),
-    entries: es.map((e) => ({ accountId: e.account_id, amount: formatMoney(parseMoney(e.amount, { allowNegative: true })) })),
+    entries: es.map((e) => ({ accountId: e.account_id, accountName: e.account_name, accountDeleted: e.account_deleted, amount: formatMoney(parseMoney(e.amount, { allowNegative: true })) })),
   };
 }
 
@@ -165,8 +169,8 @@ export async function getOperation(ctx: Ctx, id: string) {
  * Usado por la ruta pública (que rechaza operaciones ligadas a otros registros) y por los flujos que revierten sus propios registros.
  */
 export async function reverseOperationCore(ctx: Ctx, id: string, reason: string, date?: string, opts: { allowLinked?: boolean } = {}) {
-  const op = await one<{ id: string; kind: string; status: string }>(ctx.trx, sql<{ id: string; kind: string; status: string }>`
-    select id, kind, status from financial_operation where owner_id = ${ctx.ownerId} and id = ${id} for update`);
+  const op = await one<{ id: string; kind: string; status: string; description: string }>(ctx.trx, sql<{ id: string; kind: string; status: string; description: string }>`
+    select id, kind, status, description from financial_operation where owner_id = ${ctx.ownerId} and id = ${id} for update`);
   if (!op) throw notFound('Operation');
   if (op.status === 'reversed' || op.kind === 'reversal') throw unprocessable('ALREADY_REVERSED', 'The operation is already reversed or is itself a reversal');
 
@@ -177,9 +181,10 @@ export async function reverseOperationCore(ctx: Ctx, id: string, reason: string,
 
   const es = await rows<{ account_id: string; amount: string }>(ctx.trx, sql`select account_id, amount from account_entry where owner_id = ${ctx.ownerId} and operation_id = ${id}`);
   const d = resolveDate(ctx, date);
+  const revDesc = op.description.trim() ? `Reversión: ${op.description.trim()}` : 'Reversión de movimiento';
   const rev = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
     insert into financial_operation (owner_id, kind, occurred_on, description, reversal_of_id, reason, created_by)
-    values (${ctx.ownerId}, 'reversal', ${formatISO(d)}, ${'Reversión de ' + id}, ${id}, ${reason}, ${ctx.actorId}) returning id`);
+    values (${ctx.ownerId}, 'reversal', ${formatISO(d)}, ${revDesc}, ${id}, ${reason}, ${ctx.actorId}) returning id`);
   for (const e of es) {
     await sql`insert into account_entry (owner_id, operation_id, account_id, amount) values (${ctx.ownerId}, ${rev!.id}, ${e.account_id}, ${formatMoney(-parseMoney(e.amount, { allowNegative: true }))})`.execute(ctx.trx);
   }
@@ -215,17 +220,24 @@ export interface OperationListQuery {
 export async function listOperations(ctx: Ctx, q: OperationListQuery) {
   const r = await rows<{
     id: string; kind: string; occurred_on: string; description: string; status: string; category_id: string | null; category_name: string | null; contact_id: string | null; concept: string;
-    account_id: string | null; to_account_id: string | null; amount: string | null; is_receipt: boolean; is_refund: boolean; is_supplier: boolean;
+    account_id: string | null; account_name: string | null; account_deleted: boolean | null;
+    to_account_id: string | null; to_account_name: string | null; to_account_deleted: boolean | null;
+    amount: string | null; is_receipt: boolean; is_refund: boolean; is_supplier: boolean;
   }>(ctx.trx, sql`
     select o.id, o.kind, o.occurred_on, o.description, o.status, o.category_id, c.name as category_name, o.contact_id, o.concept,
-      (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount limit 1) as account_id,
-      (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount desc limit 1) as to_account_id,
+      ae1.account_id, a1.name as account_name, (a1.status = 'archived' and coalesce(a1.icon, '') = ${DELETED_ACCOUNT_MARKER}) as account_deleted,
+      ae2.account_id as to_account_id, a2.name as to_account_name, (a2.status = 'archived' and coalesce(a2.icon, '') = ${DELETED_ACCOUNT_MARKER}) as to_account_deleted,
       case when o.kind = 'transfer' then (select max(e.amount) from account_entry e where e.operation_id = o.id)
            else (select sum(e.amount) from account_entry e where e.operation_id = o.id) end as amount,
       exists(select 1 from receipt r where r.operation_id = o.id) as is_receipt,
       exists(select 1 from refund f where f.operation_id = o.id) as is_refund,
       exists(select 1 from supplier_payment s where s.operation_id = o.id) as is_supplier
-    from financial_operation o left join category c on c.id = o.category_id and c.owner_id = o.owner_id
+    from financial_operation o
+    left join category c on c.id = o.category_id and c.owner_id = o.owner_id
+    left join lateral (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount limit 1) ae1 on true
+    left join account a1 on a1.id = ae1.account_id and a1.owner_id = o.owner_id
+    left join lateral (select e.account_id from account_entry e where e.operation_id = o.id order by e.amount desc limit 1) ae2 on o.kind = 'transfer'
+    left join account a2 on a2.id = ae2.account_id and a2.owner_id = o.owner_id
     where o.owner_id = ${ctx.ownerId}
       and (${q.status ?? null}::text is null or o.status = ${q.status ?? null})
       and (${q.kind ?? null}::text is null or o.kind = ${q.kind ?? null})
@@ -242,7 +254,11 @@ export async function listOperations(ctx: Ctx, q: OperationListQuery) {
     items: page.map((x) => ({
       id: x.id, kind: x.kind, concept: x.concept, occurredOn: x.occurred_on, description: x.description, status: x.status,
       category: x.category_id ? { id: x.category_id, name: x.category_name } : null, contactId: x.contact_id,
-      accountId: x.account_id, toAccountId: x.kind === 'transfer' ? x.to_account_id : null, amount: formatMoney(parseMoney(x.amount ?? '0', { allowNegative: true })),
+      accountId: x.account_id, accountName: x.account_name, accountDeleted: !!x.account_deleted,
+      toAccountId: x.kind === 'transfer' ? x.to_account_id : null,
+      toAccountName: x.kind === 'transfer' ? x.to_account_name : null,
+      toAccountDeleted: x.kind === 'transfer' ? !!x.to_account_deleted : false,
+      amount: formatMoney(parseMoney(x.amount ?? '0', { allowNegative: true })),
       links: { receipt: x.is_receipt, refund: x.is_refund, supplierPayment: x.is_supplier },
     })),
     nextCursor: r.length > q.limit ? Buffer.from(String(q.offset + q.limit)).toString('base64url') : null,

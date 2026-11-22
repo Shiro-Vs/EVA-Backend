@@ -138,10 +138,14 @@ const opDelta = (p: OpPlan) => {
 const opInputs = (id: string, i: OperationCorrection) => ({ id, amount: i.amount === undefined ? null : formatMoney(parseMoney(i.amount)), accountId: i.accountId ?? null, toAccountId: i.toAccountId ?? null, date: i.date ?? null });
 
 async function opPreviewJson(ctx: Ctx, p: OpPlan) {
+  const oldFromName = await accountName(ctx, p.oldFrom);
+  const oldToName = p.oldTo ? await accountName(ctx, p.oldTo) : null;
+  const newFromName = await accountName(ctx, p.newFrom);
+  const newToName = p.newTo ? await accountName(ctx, p.newTo) : null;
   return {
     operation: { id: p.op.id, kind: p.op.kind, description: p.op.description },
-    before: { amount: m(p.oldAmount), accountId: p.oldFrom, toAccountId: p.oldTo, date: p.oldDate },
-    after: { amount: m(p.newAmount), accountId: p.newFrom, toAccountId: p.newTo, date: p.newDate },
+    before: { amount: m(p.oldAmount), accountId: p.oldFrom, accountName: oldFromName, ...(p.oldTo ? { toAccountId: p.oldTo, toAccountName: oldToName } : { toAccountId: null }), date: p.oldDate },
+    after: { amount: m(p.newAmount), accountId: p.newFrom, accountName: newFromName, ...(p.newTo ? { toAccountId: p.newTo, toAccountName: newToName } : { toAccountId: null }), date: p.newDate },
     effects: { accounts: await accountEffects(ctx, opDelta(p)) },
     willCreate: { reversal: true, operation: true },
     note: 'Se revierte la operación original y se registra una nueva, en una sola transacción. No se registra ninguna devolución de dinero.',
@@ -277,8 +281,8 @@ export async function previewReceiptCorrection(ctx: Ctx, id: string, i: ReceiptC
     valid,
     issues: plan.issues.map(issueJson),
     receipt: { id, contact: { id: o.contactId, name: o.contactName } },
-    before: { amount: m(o.amount), accountId: o.accountId, receivedOn: o.receivedOn },
-    after: { amount: m(plan.amount), accountId: input.accountId, receivedOn: formatISO(plan.receivedOn) },
+    before: { amount: m(o.amount), accountId: o.accountId, accountName: await accountName(ctx, o.accountId), receivedOn: o.receivedOn },
+    after: { amount: m(plan.amount), accountId: input.accountId, accountName: await accountName(ctx, input.accountId), receivedOn: formatISO(plan.receivedOn) },
     effects: {
       accounts: await accountEffects(ctx, delta),
       releasedAllocations: grouped(o.allocations),

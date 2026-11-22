@@ -57,7 +57,7 @@ export async function reconcile(ctx: Ctx, accountId: string, i: ReconcileInput &
   if (p.difference !== 0n && !reason) throw unprocessable('VALIDATION_ERROR', 'Indica el motivo del ajuste');
   let opId: string | null = null;
   if (p.difference !== 0n) {
-    opId = await insertOperation(ctx, { kind: 'adjustment', date: p.asOf, description: `Ajuste de conciliación: ${reason}`, concept: 'reconciliation', source: 'manual' }, [{ accountId, amount: p.difference }]);
+    opId = await insertOperation(ctx, { kind: 'adjustment', date: p.asOf, description: `Ajuste: ${reason}`, concept: 'reconciliation', source: 'manual' }, [{ accountId, amount: p.difference }]);
   }
   const r = await one<{ id: string }>(ctx.trx, sql<{ id: string }>`
     insert into reconciliation (owner_id, account_id, as_of, registered_balance, real_balance, difference, adjustment_operation_id, reason, created_by)

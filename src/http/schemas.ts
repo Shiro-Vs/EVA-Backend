@@ -39,6 +39,7 @@ export const accountCreate = z.object({
 export const accountPatch = z.object({
   name: text(60).optional(), color: optText(20), icon: optText(40), isDefault: z.boolean().optional(), excludeFromTotal: z.boolean().optional(),
 }).strict();
+export const bankAccountDelete = z.object({ force: z.boolean().optional() }).strict();
 
 export const operationCreate = z.object({
   kind: z.enum(['income', 'expense', 'transfer']),

@@ -49,7 +49,12 @@ describe('Configuración de la tarjeta (RN-T01, RN-AC05)', () => {
     expect((await api.get(w.u.token, `/accounts/${w.card.id}`)).body.credit).toMatchObject({ creditLine: '1000.00', used: '100.00', available: '900.00' });
     await api.post(w.u.token, '/operations', { kind: 'expense', accountId: w.card.id, amount: '47.00', date: '2026-10-10' });
     expect((await api.get(w.u.token, `/accounts/${w.card.id}`)).body.credit).toMatchObject({ used: '147.00', available: '853.00' });
-    expect((await api.get(w.u.token, '/summary')).body.balance.net).toBe('353.00'); // 500 − 147: la línea no suma
+    // GET /accounts y GET /summary también exponen la línea disponible (sin sumar al saldo propio).
+    const listCard = (await api.get(w.u.token, '/accounts')).body.items.find((a: any) => a.id === w.card.id);
+    expect(listCard.credit).toMatchObject({ creditLine: '1000.00', used: '147.00', available: '853.00' });
+    const sum = (await api.get(w.u.token, '/summary')).body;
+    expect(sum.balance.net).toBe('353.00'); // 500 − 147: la línea no suma
+    expect(sum.creditLines).toEqual({ total: '1000.00', available: '853.00', cards: 1 });
     // Reconfigurar reemplaza los datos.
     expect((await api.post(w.u.token, `/accounts/${w.card.id}/credit-details`, { cutoffDay: 15, dueDay: 5 })).body).toMatchObject({ creditLine: null, cutoffDay: 15, dueDay: 5 });
   });

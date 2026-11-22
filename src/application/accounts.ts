@@ -7,48 +7,62 @@ import { one, rows } from '../infra/db/db.js';
 import { parseISO } from '../domain/localDate.js';
 import { ts, type Ctx } from './context.js';
 
+export const DELETED_ACCOUNT_MARKER = '__deleted__';
+export const isDeletedAccountRow = (r: { status: string; icon: string | null }) =>
+  r.status === 'archived' && r.icon === DELETED_ACCOUNT_MARKER;
+
 interface Row {
   id: string; name: string; type: string; currency: string; institution: string | null; color: string | null; icon: string | null;
   is_default: boolean; exclude_from_total: boolean; status: string; version: number; created_at: unknown; balance: string;
+  credit_line: string | null; cutoff_day: number | null; due_day: number | null;
 }
 
-export const mapAccount = (r: Row) => ({
-  id: r.id, name: r.name, type: r.type, currency: r.currency, institution: r.institution, color: r.color, icon: r.icon,
-  isDefault: r.is_default, excludeFromTotal: r.exclude_from_total, status: r.status, balance: formatMoney(parseMoney(r.balance, { allowNegative: true })),
-  version: r.version, createdAt: ts(r.created_at),
-});
+export const mapAccount = (r: Row) => {
+  const balance = formatMoney(parseMoney(r.balance, { allowNegative: true }));
+  const baseObj = {
+    id: r.id, name: r.name, type: r.type, currency: r.currency, institution: r.institution, color: r.color, icon: r.icon,
+    isDefault: r.is_default, excludeFromTotal: r.exclude_from_total, status: r.status, balance,
+    version: r.version, createdAt: ts(r.created_at),
+  };
+  if (r.type !== 'credit') return baseObj;
+  const bal = parseMoney(balance, { allowNegative: true });
+  const owed = bal < 0n ? -bal : 0n;
+  return {
+    ...baseObj,
+    credit: r.cutoff_day !== null && r.due_day !== null ? {
+      creditLine: r.credit_line === null ? null : formatMoney(parseMoney(r.credit_line)),
+      cutoffDay: r.cutoff_day,
+      dueDay: r.due_day,
+      used: formatMoney(owed),
+      available: r.credit_line === null ? null : formatMoney(parseMoney(r.credit_line) - owed),
+    } : null,
+  };
+};
 
 const base = sql`
-  select a.*, coalesce(b.balance, 0.00) as balance
-  from account a left join v_account_balance b on b.account_id = a.id and b.owner_id = a.owner_id`;
+  select a.*, coalesce(b.balance, 0.00) as balance,
+         d.credit_line, d.cutoff_day, d.due_day
+  from account a
+  left join v_account_balance b on b.account_id = a.id and b.owner_id = a.owner_id
+  left join credit_account_details d on d.account_id = a.id and d.owner_id = a.owner_id`;
+
+const notDeletedSql = sql`not (a.status = 'archived' and coalesce(a.icon, '') = ${DELETED_ACCOUNT_MARKER})`;
 
 export async function getAccountRow(ctx: Ctx, id: string, forUpdate = false) {
   const lock = forUpdate ? sql`for update of a` : sql``;
-  const r = await one<Row>(ctx.trx, sql<Row>`${base} where a.owner_id = ${ctx.ownerId} and a.id = ${id} ${lock}`);
+  const r = await one<Row>(ctx.trx, sql<Row>`${base} where a.owner_id = ${ctx.ownerId} and a.id = ${id} and ${notDeletedSql} ${lock}`);
   if (!r) throw notFound('Account');
   return r;
 }
 
 /** Una tarjeta de crédito muestra su deuda, su línea y lo disponible: la línea NO es dinero propio ni entra en saldos (RN-AC05). */
 export async function getAccount(ctx: Ctx, id: string) {
-  const a = mapAccount(await getAccountRow(ctx, id));
-  if (a.type !== 'credit') return a;
-  const d = await one<{ credit_line: string | null; cutoff_day: number; due_day: number }>(ctx.trx, sql<{ credit_line: string | null; cutoff_day: number; due_day: number }>`
-    select credit_line, cutoff_day, due_day from credit_account_details where owner_id = ${ctx.ownerId} and account_id = ${id}`);
-  const bal = parseMoney(a.balance, { allowNegative: true });
-  const owed = bal < 0n ? -bal : 0n;
-  return {
-    ...a,
-    credit: d ? {
-      creditLine: d.credit_line === null ? null : formatMoney(parseMoney(d.credit_line)), cutoffDay: d.cutoff_day, dueDay: d.due_day,
-      used: formatMoney(owed), available: d.credit_line === null ? null : formatMoney(parseMoney(d.credit_line) - owed),
-    } : null,
-  };
+  return mapAccount(await getAccountRow(ctx, id));
 }
 
 export async function listAccounts(ctx: Ctx, status?: string) {
   const f = status ? sql`and a.status = ${status}` : sql``;
-  return (await rows<Row>(ctx.trx, sql<Row>`${base} where a.owner_id = ${ctx.ownerId} ${f} order by a.is_default desc, a.created_at`)).map(mapAccount);
+  return (await rows<Row>(ctx.trx, sql<Row>`${base} where a.owner_id = ${ctx.ownerId} and ${notDeletedSql} ${f} order by a.is_default desc, a.created_at`)).map(mapAccount);
 }
 
 export interface CreateAccountInput {
@@ -131,16 +145,44 @@ const ACCOUNT_USAGE: Array<[string, string, string]> = [
   ['payment_channel', 'linked_account_id', 'canales de pago'],
 ];
 
-/** Elimina una cuenta SOLO si no tiene movimientos ni configuración vinculada. Si tiene uso, sugiere archivarla. */
-export async function deleteAccount(ctx: Ctx, id: string) {
-  const cur = await getAccountRow(ctx, id, true);
+async function accountUsage(ctx: Ctx, id: string) {
   const usage: Record<string, number> = {};
   for (const [table, col, label] of ACCOUNT_USAGE) {
     const r = await one<{ n: string }>(ctx.trx, sql<{ n: string }>`select count(*) as n from ${sql.table(table)} where owner_id = ${ctx.ownerId} and ${sql.ref(col)} = ${id}`);
     if (Number(r?.n ?? 0) > 0) usage[label] = (usage[label] ?? 0) + Number(r!.n);
   }
+  return usage;
+}
+
+/** Vista previa de eliminar una cuenta: qué historial tiene antes de decidir si borrarla o archivarla. */
+export async function previewDeleteAccount(ctx: Ctx, id: string) {
+  const cur = await getAccountRow(ctx, id);
+  const usage = await accountUsage(ctx, id);
+  return {
+    account: { id: cur.id, name: cur.name, type: cur.type, status: cur.status, balance: formatMoney(parseMoney(cur.balance, { allowNegative: true })) },
+    isEmpty: Object.keys(usage).length === 0,
+    usage,
+  };
+}
+
+/**
+ * Elimina una cuenta: si no tiene uso se borra de la base; si tiene historial, sin `force` informa el uso (409 ACCOUNT_IN_USE),
+ * y con `force: true` la da de baja definitivamente conservando los movimientos históricos marcados como «Cuenta eliminada».
+ */
+export async function deleteAccount(ctx: Ctx, id: string, opts: { force?: boolean } = {}) {
+  const cur = await getAccountRow(ctx, id, true);
+  const usage = await accountUsage(ctx, id);
   if (Object.keys(usage).length > 0) {
-    throw conflict('ACCOUNT_IN_USE', 'La cuenta tiene movimientos o configuración vinculada: no se puede eliminar. Puedes archivarla', { usage });
+    if (!opts.force) {
+      throw conflict('ACCOUNT_IN_USE', 'La cuenta tiene movimientos o configuración vinculada: no se puede eliminar sin confirmar. Puedes archivarla o forzar su eliminación', { usage });
+    }
+    await sql`update subscription set preferred_account_id = null where owner_id = ${ctx.ownerId} and preferred_account_id = ${id}`.execute(ctx.trx);
+    await sql`update recurring_template set status = 'paused' where owner_id = ${ctx.ownerId} and account_id = ${id} and status = 'active'`.execute(ctx.trx);
+    await sql`update classification_rule set status = 'archived' where owner_id = ${ctx.ownerId} and account_id = ${id} and status = 'active'`.execute(ctx.trx);
+    await sql`delete from credit_account_details where owner_id = ${ctx.ownerId} and account_id = ${id}`.execute(ctx.trx);
+    await sql`update account set status = 'archived', icon = ${DELETED_ACCOUNT_MARKER}, is_default = false, exclude_from_total = true where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
+    await audit(ctx.trx, { ownerId: ctx.ownerId, actorId: ctx.actorId, action: 'account.delete', entityType: 'account', entityId: id, changes: { name: cur.name, forced: true, usage } });
+    return { id, deleted: true };
   }
   await sql`delete from credit_account_details where owner_id = ${ctx.ownerId} and account_id = ${id}`.execute(ctx.trx);
   await sql`delete from account where owner_id = ${ctx.ownerId} and id = ${id}`.execute(ctx.trx);
