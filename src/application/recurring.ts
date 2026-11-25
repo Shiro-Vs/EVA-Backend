@@ -124,7 +124,7 @@ export async function listTemplates(ctx: Ctx, status = 'active') {
 /** Cambiar importe, cuenta, frecuencia o inicio afecta solo a lo que aún no se confirmó: las ocurrencias pendientes futuras se regeneran. */
 export async function patchTemplate(ctx: Ctx, id: string, version: number, p: Partial<Omit<TemplateInput, 'kind'>>) {
   const t = await loadTemplate(ctx, id, true);
-  if (t.version !== version) throw conflict('CONFLICT_VERSION', 'The template was modified; reload and retry');
+  if (t.version !== version) throw conflict('CONFLICT_VERSION', 'La plantilla cambió mientras la editabas. Recarga e inténtalo de nuevo.');
   await validate(ctx, { ...p, kind: t.kind, startDate: p.startDate ?? t.anchor_date });
   const scheduleChanged = p.interval !== undefined || p.startDate !== undefined || p.endDate !== undefined;
   const next = {

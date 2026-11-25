@@ -216,7 +216,7 @@ export async function createBudget(ctx: Ctx, i: BudgetInput) {
 export async function patchBudget(ctx: Ctx, id: string, version: number, p: Partial<Omit<BudgetInput, 'categoryId' | 'period' | 'startsOn'>>) {
   const b = await load(ctx, id, true);
   if (b.status !== 'active') throw unprocessable('BUDGET_ARCHIVED', 'El presupuesto está archivado');
-  if (b.version !== version) throw conflict('CONFLICT_VERSION', 'The budget was modified; reload and retry');
+  if (b.version !== version) throw conflict('CONFLICT_VERSION', 'El presupuesto cambió mientras lo editabas. Recarga e inténtalo de nuevo.');
   const th = await validate(ctx, { ...p, rollover: p.rollover ?? b.rollover });
   const rollover = p.rollover ?? b.rollover;
   const cap = p.rolloverCap === undefined ? (rollover ? b.rollover_cap : null) : p.rolloverCap;

@@ -86,7 +86,7 @@ export async function createGoal(ctx: Ctx, i: GoalInput) {
 
 export async function patchGoal(ctx: Ctx, id: string, version: number, p: Partial<GoalInput>) {
   const g = await load(ctx, id, true);
-  if (g.version !== version) throw conflict('CONFLICT_VERSION', 'The goal was modified; reload and retry');
+  if (g.version !== version) throw conflict('CONFLICT_VERSION', 'La meta cambió mientras la editabas. Recarga e inténtalo de nuevo.');
   let nextTarget = g.target_amount;
   if (p.targetAmount !== undefined) {
     const target = parseMoney(p.targetAmount);
