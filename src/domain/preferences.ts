@@ -40,8 +40,15 @@ const capture = z.object({ reviewMode: z.enum(['individual', 'batch']), duplicat
 const security = z.object({ lockAfterSeconds: z.number().int().min(0).max(3600) }).strict();
 /** Copias automáticas (RN-BK03/BK04, D-26). */
 const backup = z.object({ frequency: z.enum(['off', 'weekly', 'monthly']), keep: z.union([z.literal(1), z.literal(2)]) }).strict();
+/** Módulos visibles en la app (por defecto todos activos; Inicio y Dinero siempre están activos). */
+const modules = z.object({
+  services: z.boolean(),
+  people: z.boolean(),
+  loans: z.boolean(),
+  plan: z.boolean(),
+}).strict();
 
-export const SECTIONS = { dashboard, notifications, capture, security, backup } as const;
+export const SECTIONS = { dashboard, notifications, capture, security, backup, modules } as const;
 export type SectionName = keyof typeof SECTIONS;
 export type Preferences = { [K in SectionName]: z.infer<(typeof SECTIONS)[K]> };
 
@@ -54,6 +61,7 @@ export const DEFAULTS: Preferences = {
   capture: { reviewMode: 'individual', duplicates: 'separate' },
   security: { lockAfterSeconds: 60 },
   backup: { frequency: 'weekly', keep: 2 },
+  modules: { services: true, people: true, loans: true, plan: true },
 };
 
 /** Todas las tarjetas siempre presentes y en el orden guardado; las que faltan quedan al final, desactivadas. */
@@ -75,6 +83,6 @@ export function resolvePreferences(stored: unknown): Preferences {
 }
 
 export const preferencesPatch = z.object({
-  dashboard: dashboard.optional(), notifications: notifications.optional(), capture: capture.optional(), security: security.optional(), backup: backup.optional(),
+  dashboard: dashboard.optional(), notifications: notifications.optional(), capture: capture.optional(), security: security.optional(), backup: backup.optional(), modules: modules.optional(),
 }).strict().refine((v) => Object.keys(v).length > 0, 'No hay nada que guardar');
 export type PreferencesPatch = z.infer<typeof preferencesPatch>;
